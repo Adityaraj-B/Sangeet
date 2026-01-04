@@ -1,0 +1,59 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'constants.dart';
+
+ThemeData theme() {
+  return ThemeData(
+    scaffoldBackgroundColor: Colors.white,
+    fontFamily: 'PlayfairDisplay',
+    appBarTheme: appBarTheme(),
+    textTheme: textTheme(), // Corrected the function name
+    inputDecorationTheme: inputDecorationTheme(),
+    primarySwatch: Colors.blue,
+  );
+}
+
+InputDecorationTheme inputDecorationTheme() {
+  OutlineInputBorder outlineInputBorder = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(24),
+    borderSide: BorderSide(color: kPrimaryColor),
+    gapPadding: 6,
+  );
+  return InputDecorationTheme(
+    floatingLabelBehavior: FloatingLabelBehavior.always,
+    contentPadding: EdgeInsets.symmetric(vertical: 20, horizontal: 30),
+    border: outlineInputBorder,
+    enabledBorder: outlineInputBorder,
+    focusedBorder: outlineInputBorder,
+  );
+}
+
+TextTheme textTheme() {
+  return const TextTheme(
+    // Body text will use the default font: 'Muli'
+    bodyLarge: TextStyle(color: kPrimaryColor),
+    bodyMedium: TextStyle(color: kPrimaryColor),
+
+    titleLarge: TextStyle(
+      color: kPrimaryColor,
+      fontWeight: FontWeight.bold,
+      fontFamily: 'PlayfairDisplay',
+    ),
+    headlineSmall: TextStyle(
+      color: kPrimaryColor,
+      fontWeight: FontWeight.bold,
+      fontFamily: 'PlayfairDisplay',
+    ),
+  );
+}
+
+AppBarTheme appBarTheme() {
+  return AppBarTheme(
+    centerTitle: true,
+    color: Colors.white,
+    elevation: 0,
+    systemOverlayStyle: SystemUiOverlayStyle.dark,
+    iconTheme: IconThemeData(color: Colors.black),
+    titleTextStyle: TextStyle(color: Color(0xFF8b8b8b), fontSize: 18),
+  );
+}
