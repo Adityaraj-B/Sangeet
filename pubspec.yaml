@@ -1,0 +1,50 @@
+name: sangeet
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter_native_splash: ^2.4.7
+  shared_preferences: ^2.1.0
+  flutter_color_extractor: ^1.0.0
+  palette_generator: ^0.3.3
+
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter_native_splash:
+  color: "#E6D690"
+  image: assets/images/Gemini_Generated_Image_ll6zfull6zfull6z.png
+  android: true
+  ios: true
+  web: false
+
+  android_12:
+    color: "#282327"
+    image: assets/images/Gemini_Generated_Image_ll6zfull6zfull6z.png
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+
+
+  fonts:
+    - family: Merry
+      fonts:
+        - asset: assets/fonts/Merriweather-VariableFont_opsz,wdth,wght.ttf
+        - asset: assets/fonts/PlayfairDisplay-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Merriweather-Italic-VariableFont_opsz,wdth,wght.ttf
+          style: italic
