@@ -14,13 +14,33 @@ class AlbumArt extends StatelessWidget {
   Widget build(BuildContext context) {
     return RotationTransition(
       turns: rotation,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Image.network(
-          coverUrl,
-          height: 280,
-          width: 280,
-          fit: BoxFit.cover,
+      child: Container(
+        width: 280,
+        height: 280,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.45),
+              blurRadius: 40,
+              spreadRadius: 6,
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: Image.network(
+            coverUrl,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              );
+            },
+            errorBuilder: (_, __, ___) => const Center(
+              child: Icon(Icons.music_note, size: 64),
+            ),
+          ),
         ),
       ),
     );

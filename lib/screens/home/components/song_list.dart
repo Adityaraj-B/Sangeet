@@ -7,11 +7,12 @@ class HorizontalSongList extends StatelessWidget {
   final void Function(Song) onPlay;
 
   const HorizontalSongList({
-    Key? key,
+    super.key,
     required this.songs,
     required this.visibleIndices,
     required this.onPlay,
-  }) : super(key: key);
+  });
+
 
   @override
   Widget build(BuildContext context) {

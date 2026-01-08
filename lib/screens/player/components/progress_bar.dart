@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 
 class ProgressBar extends StatelessWidget {
-  const ProgressBar({super.key});
+  final Color accentColor;
+
+  const ProgressBar({
+    super.key,
+    required this.accentColor,
+  });
+
 
   @override
   Widget build(BuildContext context) {
@@ -14,11 +20,11 @@ class ProgressBar extends StatelessWidget {
           activeColor: kPrimaryColor,
           inactiveColor: Colors.white24,
         ),
-        const Row(
+        Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('1:12', style: TextStyle(color: Colors.white54)),
-            Text('3:45', style: TextStyle(color: Colors.white54)),
+            Text('1:12', style: TextStyle(color: accentColor,)),
+            Text('3:45', style: TextStyle(color: accentColor,)),
           ],
         ),
       ],

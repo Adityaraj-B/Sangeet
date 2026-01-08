@@ -37,13 +37,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-
-    testOptions {
-        unitTests.all {
-            it.isEnabled = false
-        }
-    }
-
 }
 
 flutter {

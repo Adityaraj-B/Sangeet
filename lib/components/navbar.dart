@@ -13,7 +13,7 @@ class SlidingBubbleNavBar extends StatefulWidget {
     required this.currentIndex,
     required this.onTap,
     this.horizontalPadding = 12.0,
-    this.barHeight = 75.0,
+    this.barHeight = 73.0,
   });
 
   @override

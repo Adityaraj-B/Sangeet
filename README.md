@@ -1,56 +1,16 @@
-# 🎵 Sangeet
+# sangeet
 
-**Sangeet** is a modern music player application built using **Flutter**, focused on clean UI, smooth animations, and an immersive listening experience.
+A new Flutter project.
 
----
+## Getting Started
 
-## ✨ Features
+This project is a starting point for a Flutter application.
 
-- 🎧 Music playback
-- 🖼️ Album art–based UI
-- ▶️ Mini player & full player screen
-- 📜 Lyrics view toggle
-- ❤️ Like & save songs
-- 📂 Music library
-- 🌙 Dark-themed modern design
+A few resources to get you started if this is your first Flutter project:
 
----
+- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-## 🛠️ Tech Stack
-
-- **Flutter**
-- **Dart**
-- **Material Design**
-
----
-
-## 📁 Folder Structure
-
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Flutter SDK
-- Android Studio / VS Code
-- Emulator or physical device
-
-🔮 Future Improvements
-
-Online music streaming
-Backend integration
-User authentication
-Playlists & recommendations
-Advanced audio controls
-
-📄 License
-
-This project is licensed under the MIT License.
-
-👤 Author
-
-Adityaraj Bagwan
-B.Tech CSE Student | Flutter Developer
-India 🇮🇳
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.

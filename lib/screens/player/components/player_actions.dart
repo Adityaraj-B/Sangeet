@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 class PlayerActions extends StatelessWidget {
-  const PlayerActions({super.key});
+  final Color accentColor;
+
+  const PlayerActions({
+    super.key,
+    required this.accentColor,
+  });
 
   @override
   Widget build(BuildContext context) {
