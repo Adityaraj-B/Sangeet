@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter_native_splash: ^2.4.7
   shared_preferences: ^2.1.0
+  flutter_color_extractor: ^1.0.0
+  palette_generator: ^0.3.3
 
   flutter:
     sdk: flutter

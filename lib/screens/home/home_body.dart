@@ -6,7 +6,7 @@ import '../../models/song.dart';
 import '../../models/playlist.dart';
 import '../library/library_body.dart';
 import 'components/banner_widget.dart';
-import 'components/bottom_player.dart';
+import '../../components/bottom_player.dart';
 import 'components/playlist_grid.dart';
 import 'components/section_header.dart';
 import 'components/song_list.dart';
@@ -14,20 +14,22 @@ import 'components/vertical_song_list.dart';
 import 'package:sangeet/constants.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final void Function(Song) onPlaySong;
+
+  const HomeScreen({super.key, required this.onPlaySong});
+
   static const routeName = '/home';
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
 
   String _query = '';
-  Song? _currentSong;
-  bool _isPlaying = false;
 
   List<int> _visibleRecommended = [];
   List<int> _visibleRecent = [];
@@ -120,17 +122,6 @@ class _HomeScreenState extends State<HomeScreen> {
         .toList();
   }
 
-  void _playSong(Song song) {
-    setState(() {
-      if (_currentSong?.title == song.title) {
-        _isPlaying = !_isPlaying;
-      } else {
-        _currentSong = song;
-        _isPlaying = true;
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).padding.bottom + 84;
@@ -165,7 +156,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       HorizontalSongList(
                         songs: _filteredRecommended,
                         visibleIndices: _visibleRecommended,
-                        onPlay: _playSong,
+                        onPlay: widget.onPlaySong,
+
                       ),
                       const SizedBox(height: 22),
 
@@ -174,7 +166,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       VerticalSongList(
                         songs: _filteredRecent,
                         visibleIndices: _visibleRecent,
-                        onPlay: _playSong,
+                        onPlay: widget.onPlaySong,
+
                       ),
                       const SizedBox(height: 22),
 
@@ -213,17 +206,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      bottomSheet: Padding(
-        padding: EdgeInsets.only(
-          bottom: kBottomNavigationBarHeight,
-        ),
-        child: BottomPlayer(
-          currentSong: _currentSong,
-          isPlaying: _isPlaying,
-          onToggle: () => setState(() => _isPlaying = !_isPlaying),
-        ),
-      ),
-
     );
   }
 }

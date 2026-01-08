@@ -5,30 +5,18 @@ allprojects {
     }
 }
 
+val newBuildDir: Directory =
+    rootProject.layout.buildDirectory
+        .dir("../../build")
+        .get()
+rootProject.layout.buildDirectory.value(newBuildDir)
+
+subprojects {
+    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
+    project.layout.buildDirectory.value(newSubprojectBuildDir)
+}
 subprojects {
     project.evaluationDependsOn(":app")
-}
-
-subprojects {
-    plugins.withId("com.android.application") {
-        extensions.configure<com.android.build.gradle.BaseExtension>("android") {
-            testOptions {
-                unitTests.all {
-                    it.isEnabled = false
-                }
-            }
-        }
-    }
-
-    plugins.withId("com.android.library") {
-        extensions.configure<com.android.build.gradle.BaseExtension>("android") {
-            testOptions {
-                unitTests.all {
-                    it.isEnabled = false
-                }
-            }
-        }
-    }
 }
 
 tasks.register<Delete>("clean") {

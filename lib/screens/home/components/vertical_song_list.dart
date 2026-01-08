@@ -6,7 +6,13 @@ class VerticalSongList extends StatelessWidget {
   final List<int> visibleIndices;
   final void Function(Song) onPlay;
 
-  const VerticalSongList({Key? key, required this.songs, required this.visibleIndices, required this.onPlay}) : super(key: key);
+  const VerticalSongList({
+    super.key,
+    required this.songs,
+    required this.visibleIndices,
+    required this.onPlay,
+  });
+
 
   @override
   Widget build(BuildContext context) {

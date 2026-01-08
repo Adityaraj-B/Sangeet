@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 import '../../components/navbar.dart';
+import '../profile/profile_body.dart';
 import 'components/library_section.dart';
 import 'components/top_bar.dart';
 import 'components/left_column.dart';
@@ -115,7 +116,26 @@ class _LibraryBodyState extends State<LibraryBody>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              TopBar(animation: _topBarAnim),
+                              TopBar(
+                                animation: _topBarAnim,
+                                onProfileTap: () {
+                                  Navigator.of(context).push(
+                                    PageRouteBuilder(
+                                      transitionDuration: const Duration(milliseconds: 350),
+                                      pageBuilder: (_, animation, __) {
+                                        return FadeTransition(
+                                          opacity: animation,
+                                          child: const ProfileBody(),
+                                        );
+                                      },
+                                    ),
+                                  );
+                                },
+                                onInsightsTap: () {},
+                                onNotificationsTap: () {},
+                                notificationsCount: 2,
+                              ),
+
                               const SizedBox(height: 12),
 
                               SectionHeaderAndList(

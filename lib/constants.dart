@@ -10,6 +10,7 @@ const kMutedTextColor = Color(0xFFBDBDBD);
 const kTextColorDark = Color(0xFF111111);
 const kAnimationDuration = Duration(milliseconds: 200);
 
+
 // Validators and strings (keep)
 final RegExp emailValidatorRegExp = RegExp(r"^[a-zA-Z0-9.]+@[a-zA-Z0-9]+\.[a-zA-Z]+",);
 const String kEmailNullError = "Please Enter your email";
