@@ -4,15 +4,20 @@ import 'package:sangeet/constants.dart';
 class PlayerControls extends StatelessWidget {
   final bool isPlaying;
   final VoidCallback onPlayPause;
+  final VoidCallback onNext;
+  final VoidCallback onPrevious;
   final Color accentColor;
+  final bool isPodcast;
 
   const PlayerControls({
     super.key,
     required this.isPlaying,
     required this.onPlayPause,
+    required this.onNext,
+    required this.onPrevious,
     required this.accentColor,
+    required this.isPodcast,
   });
-
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +26,15 @@ class PlayerControls extends StatelessWidget {
       children: [
         IconButton(
           iconSize: 28,
-          icon: Icon(Icons.skip_previous, color: accentColor,
+          icon: Icon(
+            Icons.skip_previous,
+            color: isPodcast ? accentColor.withOpacity(0.4) : accentColor,
           ),
-          onPressed: () {},
+          onPressed: isPodcast ? null : onPrevious,
         ),
+
         const SizedBox(width: 12),
+
         GestureDetector(
           onTap: onPlayPause,
           child: Container(
@@ -42,11 +51,16 @@ class PlayerControls extends StatelessWidget {
             ),
           ),
         ),
+
         const SizedBox(width: 12),
+
         IconButton(
           iconSize: 28,
-          icon: Icon(Icons.skip_next, color: accentColor,),
-          onPressed: () {},
+          icon: Icon(
+            Icons.skip_next,
+            color: isPodcast ? accentColor.withOpacity(0.4) : accentColor,
+          ),
+          onPressed: isPodcast ? null : onNext,
         ),
       ],
     );

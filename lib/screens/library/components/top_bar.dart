@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 
+import '../../profile/components/notifications.dart';
+
 class TopBar extends StatelessWidget {
   final AnimationController animation;
   final VoidCallback? onProfileTap;
@@ -80,7 +82,14 @@ class TopBar extends StatelessWidget {
                 _ActionSquare(
                   icon: Icons.notifications_none,
                   tooltip: 'Notifications',
-                  onTap: onNotificationsTap,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationScreen(),
+                      ),
+                    );
+                  },
                   badgeCount: notificationsCount,
                 ),
               ],

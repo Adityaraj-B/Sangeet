@@ -28,6 +28,13 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.deepPurple,
         scaffoldBackgroundColor: Colors.black,
         useMaterial3: true,
+        // Add this to prevent Material 3 from overriding custom transitions
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          },
+        ),
       ),
       // keep routes map as before
       routes: routes,
@@ -36,6 +43,7 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
 /// A small widget that checks login state and redirects accordingly.
 /// Keeps your existing routes and `body.routeName` untouched.
 class SplashRouter extends StatefulWidget {

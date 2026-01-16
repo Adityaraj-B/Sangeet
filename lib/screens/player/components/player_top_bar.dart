@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class PlayerTopBar extends StatelessWidget {
   final bool liked;
   final VoidCallback onLikeToggle;
+  final VoidCallback onCollapse;
 
   const PlayerTopBar({
     super.key,
     required this.liked,
     required this.onLikeToggle,
+    required this.onCollapse,
   });
 
   @override
@@ -16,7 +18,7 @@ class PlayerTopBar extends StatelessWidget {
       children: [
         IconButton(
           icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: onCollapse, // ✅ ONLY callback
         ),
         const Spacer(),
         const Text(

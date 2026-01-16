@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 import '../../components/navbar.dart';
+import '../../models/song.dart';
 import '../profile/profile_body.dart';
 import 'components/library_section.dart';
 import 'components/top_bar.dart';
@@ -15,8 +16,12 @@ class LibCard {
 }
 
 class LibraryBody extends StatefulWidget {
-  const LibraryBody({super.key});
-  static const routeName = '/library';
+  final ValueChanged<Song> onPlaySong;
+
+  const LibraryBody({
+    super.key,
+    required this.onPlaySong,
+  });
 
   @override
   State<LibraryBody> createState() => _LibraryBodyState();
@@ -125,14 +130,12 @@ class _LibraryBodyState extends State<LibraryBody>
                                       pageBuilder: (_, animation, __) {
                                         return FadeTransition(
                                           opacity: animation,
-                                          child: const ProfileBody(),
+                                          child: ProfileBody(onPlaySong: widget.onPlaySong),
                                         );
                                       },
                                     ),
                                   );
                                 },
-                                onInsightsTap: () {},
-                                onNotificationsTap: () {},
                                 notificationsCount: 2,
                               ),
 

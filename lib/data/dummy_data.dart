@@ -93,4 +93,35 @@ class DummyData {
       songCount: 60,
     ),
   ];
+  static final List<Song> likedSongs = [
+    Song(
+      id: '101',
+      title: 'After Hours',
+      artist: 'The Weeknd',
+      coverUrl: 'https://picsum.photos/seed/101/300/300',
+      duration: const Duration(minutes: 6, seconds: 1),
+    ),
+    Song(
+      id: '102',
+      title: 'Night Changes',
+      artist: 'One Direction',
+      coverUrl: 'https://picsum.photos/seed/102/300/300',
+      duration: const Duration(minutes: 3, seconds: 46),
+    ),
+    Song(
+      id: '103',
+      title: 'Heat Waves',
+      artist: 'Glass Animals',
+      coverUrl: 'https://picsum.photos/seed/103/300/300',
+      duration: const Duration(minutes: 3, seconds: 58),
+    ),
+    Song(
+      id: '104',
+      title: 'Someone You Loved',
+      artist: 'Lewis Capaldi',
+      coverUrl: 'https://picsum.photos/seed/104/300/300',
+      duration: const Duration(minutes: 3, seconds: 2),
+    ),
+  ];
+
 }
