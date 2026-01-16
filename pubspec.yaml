@@ -11,6 +11,9 @@ dependencies:
   shared_preferences: ^2.1.0
   flutter_color_extractor: ^1.0.0
   palette_generator: ^0.3.3
+  just_audio: ^0.9.36
+  audio_session: ^0.1.16
+  http: ^1.1.0
 
   flutter:
     sdk: flutter

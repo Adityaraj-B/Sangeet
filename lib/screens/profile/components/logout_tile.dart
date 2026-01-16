@@ -55,7 +55,7 @@ class LogoutTile extends StatelessWidget {
           child: Ink(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(26),
               border: Border.all(
                 color: Colors.redAccent.withOpacity(0.3),
                 width: 1.5,

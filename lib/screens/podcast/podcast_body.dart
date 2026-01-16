@@ -10,7 +10,13 @@ import 'components/featured_hero .dart';
 import 'components/section_title.dart';
 
 class PodcastsScreen extends StatefulWidget {
-  const PodcastsScreen({super.key});
+  final ValueChanged<Podcast> onPlayPodcast;
+
+  const PodcastsScreen({
+    super.key,
+    required this.onPlayPodcast,
+  });
+
   static const route = '/podcasts';
 
   @override
@@ -92,7 +98,9 @@ class _PodcastsScreenState extends State<PodcastsScreen> {
               const SizedBox(height: 12),
               GlassMiniPlayer(
                 podcast: continueListening.first,
+                onPlay: widget.onPlayPodcast,
               ),
+
               const SizedBox(height: 26),
             ],
 

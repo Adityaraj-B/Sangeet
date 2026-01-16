@@ -1,13 +1,17 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/components/navbar.dart';
 import 'package:sangeet/screens/home/home_body.dart';
 import 'package:sangeet/screens/library/library_body.dart';
+import 'package:sangeet/screens/player/player_body.dart';
 import 'package:sangeet/screens/podcast/podcast_body.dart';
-import 'package:sangeet/screens/search/search_body.dart';
+import 'package:sangeet/screens/search/components/search_screen.dart';
 import '../components/album_color.dart';
+import '../components/playable.dart';
+import '../models/podcasts.dart';
 import '../models/song.dart';
 import '../components/bottom_player.dart';
+import '../repositories/search_repo.dart';
+import '../services/audio_player_service.dart';
 
 class Body extends StatefulWidget {
   static const routeName = '/body';
@@ -17,61 +21,117 @@ class Body extends StatefulWidget {
   State<Body> createState() => _BodyState();
 }
 
-class _BodyState extends State<Body> {
+class _BodyState extends State<Body> with TickerProviderStateMixin {
   int _currentIndex = 0;
-  Color _playerColor = Colors.black;
-  Song? _currentSong;
-  bool _isPlaying = false;
   int _previousIndex = 0;
-
-
+  PlaybackItem? _currentItem;
+  bool _showMiniPlayer = false;
+  Color _playerColor = Colors.black;
   late final List<Widget> _pages;
+  final AudioPlayerService _audioService = AudioPlayerService();
 
   @override
   void initState() {
     super.initState();
     _pages = [
-      HomeScreen(onPlaySong: _playSong),
-      const search_body(),
-      const PodcastsScreen(),
-      const LibraryBody(),
+      HomeScreen(onPlaySong: _openPlayerForSong),
+      SearchScreen(
+        repository: SearchRepository(),
+        onPlay: _openPlayerForSong,
+      ),
+      PodcastsScreen(onPlayPodcast: _openPlayerForPodcast),
+      LibraryBody(onPlaySong: _openPlayerForSong),
     ];
   }
 
-  void _onHorizontalSwipe(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
+  Future<void> _openPlayerForSong(Song song) async {
+    // Don't play here - let PlayerScreen handle it
+    await _openPlayer(
+      PlaybackItem(type: PlaybackType.song, data: song),
+      song.coverUrl,
+    );
+  }
 
-    if (velocity < -250 && _currentIndex < _pages.length - 1) {
-      _onNavTap(_currentIndex + 1);
-    } else if (velocity > 250 && _currentIndex > 0) {
-      _onNavTap(_currentIndex - 1);
+  Future<void> _openPlayerForPodcast(Podcast podcast) async {
+    await _openPlayer(
+      PlaybackItem(type: PlaybackType.podcast, data: podcast),
+      podcast.imageUrl,
+    );
+  }
+
+  Future<void> _openPlayer(PlaybackItem item, String imageUrl) async {
+    // Extract color first
+    final color = await extractDominantColor(imageUrl);
+
+    if (!mounted) return;
+
+    // Update state
+    setState(() {
+      _currentItem = item;
+      _playerColor = color;
+      _showMiniPlayer = false;
+    });
+
+    // Navigate to player
+    final collapsed = await Navigator.of(context).push<bool>(
+      _ExpandingPlayerRoute(
+        page: PlayerScreen(
+          item: item,
+          onCollapse: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {
+        _showMiniPlayer = collapsed == true;
+      });
     }
   }
 
-  void _onNavTap(int index) {
-    if (index == _currentIndex) return;
-    setState(() {
-      _previousIndex = _currentIndex;
-      _currentIndex = index;
-    });
+  void _reopenPlayer() {
+    if (_currentItem == null) return;
+
+    if (_currentItem!.type == PlaybackType.song) {
+      _reopenPlayerForSong(_currentItem!.data as Song);
+    } else if (_currentItem!.type == PlaybackType.podcast) {
+      _reopenPlayerForPodcast(_currentItem!.data as Podcast);
+    }
   }
 
-  void _togglePlay() {
-    setState(() => _isPlaying = !_isPlaying);
+  Future<void> _reopenPlayerForSong(Song song) async {
+    setState(() => _showMiniPlayer = false);
+
+    final collapsed = await Navigator.of(context).push<bool>(
+      _ExpandingPlayerRoute(
+        page: PlayerScreen(
+          item: PlaybackItem(type: PlaybackType.song, data: song),
+          onCollapse: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
+
+    if (mounted) {
+      setState(() => _showMiniPlayer = collapsed == true);
+    }
   }
 
-  void _playSong(Song song) async {
-    setState(() {
-      _currentSong = song;
-      _isPlaying = true;
-    });
+  Future<void> _reopenPlayerForPodcast(Podcast podcast) async {
+    setState(() => _showMiniPlayer = false);
 
-    final color = await extractDominantColor(song.coverUrl);
-    if (!mounted) return;
+    final collapsed = await Navigator.of(context).push<bool>(
+      _ExpandingPlayerRoute(
+        page: PlayerScreen(
+          item: PlaybackItem(type: PlaybackType.podcast, data: podcast),
+          onCollapse: () => Navigator.pop(context, true),
+        ),
+      ),
+    );
 
-    setState(() => _playerColor = color);
+    if (mounted) {
+      setState(() => _showMiniPlayer = collapsed == true);
+    }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -79,119 +139,114 @@ class _BodyState extends State<Body> {
       extendBody: true,
       body: Stack(
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onHorizontalDragEnd: _onHorizontalSwipe,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 560),
-              reverseDuration: const Duration(milliseconds: 420),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              layoutBuilder: (currentChild, previousChildren) {
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ...previousChildren,
-                    if (currentChild != null) currentChild,
-                  ],
-                );
-              },
-              transitionBuilder: (child, animation) {
-                final isForward = _currentIndex > _previousIndex;
-
-                final fade = Tween<double>(
-                  begin: 0.0,
-                  end: 1.0,
-                ).animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: const Interval(0.15, 1.0, curve: Curves.easeOut),
+          IndexedStack(
+            index: _currentIndex,
+            children: _pages,
+          ),
+          if (_showMiniPlayer && _currentItem != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 1,
+              child: SafeArea(
+                top: false,
+                child: GestureDetector(
+                  onTap: _reopenPlayer,
+                  child: BottomPlayer(
+                    currentItem: _currentItem,
+                    backgroundColor: _playerColor,
                   ),
-                );
-
-                final slide = Tween<Offset>(
-                  begin: Offset(isForward ? 0.06 : -0.06, 0.02),
-                  end: Offset.zero,
-                ).animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  ),
-                );
-
-                final scale = Tween<double>(
-                  begin: 0.985,
-                  end: 1.0,
-                ).animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOut,
-                  ),
-                );
-
-                final blur = Tween<double>(
-                  begin: 8.0,
-                  end: 0.0,
-                ).animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOut,
-                  ),
-                );
-
-                return AnimatedBuilder(
-                  animation: animation,
-                  builder: (context, _) {
-                    return FadeTransition(
-                      opacity: fade,
-                      child: SlideTransition(
-                        position: slide,
-                        child: ScaleTransition(
-                          scale: scale,
-                          child: ClipRect(
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(
-                                sigmaX: blur.value,
-                                sigmaY: blur.value,
-                              ),
-                              child: child,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey(_currentIndex),
-                child: _pages[_currentIndex],
+                ),
               ),
             ),
-          ),
-
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 1,
-            child: SafeArea(
-              top: false,
-              child: BottomPlayer(
-                currentSong: _currentSong,
-                isPlaying: _isPlaying,
-                onToggle: _togglePlay,
-                onNext: () {  },
-                onPrevious: () {  },
-                backgroundColor: _playerColor,
-
-              ),
-            ),
-          ),
         ],
       ),
       bottomNavigationBar: SlidingBubbleNavBar(
         currentIndex: _currentIndex,
-        onTap: _onNavTap,
+        onTap: (i) {
+          setState(() {
+            _previousIndex = _currentIndex;
+            _currentIndex = i;
+          });
+        },
+      ),
+    );
+  }
+}
+
+class _ExpandingPlayerRoute<T> extends PageRoute<T> {
+  final Widget page;
+
+  _ExpandingPlayerRoute({required this.page});
+
+  @override
+  Color? get barrierColor => const Color(0x8A000000);
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get opaque => false;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 450);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 400);
+
+  @override
+  Widget buildPage(
+      BuildContext context,
+      Animation<double> animation,
+      Animation<double> secondaryAnimation,
+      ) {
+    return page;
+  }
+
+  @override
+  Widget buildTransitions(
+      BuildContext context,
+      Animation<double> animation,
+      Animation<double> secondaryAnimation,
+      Widget child,
+      ) {
+    final curve = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    final slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 1),
+      end: Offset.zero,
+    ).animate(curve);
+
+    final scaleAnimation = Tween<double>(
+      begin: 0.92,
+      end: 1.0,
+    ).animate(curve);
+
+    final fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: animation,
+        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      ),
+    );
+
+    return SlideTransition(
+      position: slideAnimation,
+      child: ScaleTransition(
+        scale: scaleAnimation,
+        child: FadeTransition(
+          opacity: fadeAnimation,
+          child: child,
+        ),
       ),
     );
   }

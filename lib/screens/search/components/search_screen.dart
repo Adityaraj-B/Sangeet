@@ -9,12 +9,12 @@ import 'package:sangeet/models/song.dart';
 
 class SearchScreen extends StatefulWidget {
   final SearchRepository repository;
-  final void Function(Song)? onPlay;
+  final void Function(Song) onPlay;  // Remove the nullable '?'
 
   const SearchScreen({
     Key? key,
     required this.repository,
-    this.onPlay,
+    required this.onPlay,  // Make it required, not optional
   }) : super(key: key);
 
   @override
@@ -26,6 +26,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   final TextEditingController _ctrl = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+
+  bool get _isSearching =>
+      _focusNode.hasFocus || _ctrl.text.trim().isNotEmpty;
+
 
   Timer? _debounce;
   List<Song> _results = [];
@@ -88,7 +92,7 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
 
-    final sug = await widget.repository.suggestions(query, limit: 8);
+    final sug = await widget.repository.suggestions(query, limit: 5);
     if (!mounted) return;
 
     setState(() => _suggestions = sug);
@@ -125,6 +129,53 @@ class _SearchScreenState extends State<SearchScreen> {
     _performQuery(suggestion);
   }
 
+  Future<void> _handlePlaySong(Song song) async {
+    try {
+      // Check if song has stream URL
+      if (song.streamUrl == null || song.streamUrl!.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to load song stream'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      print('Playing song: ${song.title}');
+      print('Stream URL: ${song.streamUrl}');
+
+      // Call the onPlay callback - this will update the main player
+      widget.onPlay(song);
+
+      // Optional: Navigate back to show the player
+      // Navigator.pop(context);
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Now playing: ${song.title}'),
+            duration: const Duration(seconds: 1),
+            backgroundColor: kPrimaryColor,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error playing song: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildSearchField() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
@@ -157,8 +208,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
                     hintText: 'Search songs, artists, albums',
-                    hintStyle:
-                    TextStyle(color: Colors.white.withOpacity(0.7)),
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
                     border: InputBorder.none,
                     isCollapsed: true,
                   ),
@@ -190,7 +240,9 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildSuggestions() {
-    if (_suggestions.isEmpty) return const SizedBox.shrink();
+    if (_suggestions.isEmpty || !_isSearching) {
+      return const SizedBox.shrink();
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -200,8 +252,7 @@ class _SearchScreenState extends State<SearchScreen> {
         children: _suggestions
             .map(
               (s) => ActionChip(
-            label:
-            Text(s, style: const TextStyle(color: Colors.white)),
+            label: Text(s, style: const TextStyle(color: Colors.white)),
             backgroundColor: Colors.white.withOpacity(0.04),
             onPressed: () => _applySuggestion(s),
           ),
@@ -212,7 +263,9 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildRecent() {
-    if (_recent.isEmpty) return const SizedBox.shrink();
+    if (_recent.isEmpty || _isSearching) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,30 +283,24 @@ class _SearchScreenState extends State<SearchScreen> {
             const Spacer(),
             TextButton(
               onPressed: _clearRecent,
-              child: const Text('Clear',
-                  style: TextStyle(color: Colors.white54)),
+              child: const Text(
+                'Clear',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                ),
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: _recent.map((r) {
             return InputChip(
-              label: Text(r,
-                  style: const TextStyle(color: Colors.white)),
+              label: Text(r, style: const TextStyle(color: Colors.white)),
               onPressed: () => _applySuggestion(r),
-              deleteIcon:
-              const Icon(Icons.close, size: 18, color: Colors.white54),
-              onDeleted: () async {
-                final prefs = await SharedPreferences.getInstance();
-                final list =
-                    prefs.getStringList(_kRecentKey) ?? [];
-                list.remove(r);
-                await prefs.setStringList(_kRecentKey, list);
-                if (mounted) setState(() => _recent = list);
-              },
               backgroundColor: Colors.white.withOpacity(0.03),
             );
           }).toList(),
@@ -275,9 +322,7 @@ class _SearchScreenState extends State<SearchScreen> {
         padding: const EdgeInsets.all(18),
         child: Center(
           child: Text(
-            _ctrl.text.isEmpty
-                ? 'Start typing to find songs'
-                : 'No results',
+            _ctrl.text.isEmpty ? 'Start typing to find songs' : 'No results',
             style: const TextStyle(color: Colors.white54),
           ),
         ),
@@ -293,19 +338,38 @@ class _SearchScreenState extends State<SearchScreen> {
         final song = _results[index];
         return ListTile(
           contentPadding: EdgeInsets.zero,
-          onTap: () => widget.onPlay?.call(song),
+          onTap: () => _handlePlaySong(song),
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(
+            child: song.coverUrl.isNotEmpty
+                ? Image.network(
               song.coverUrl,
               height: 56,
               width: 56,
               fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  height: 56,
+                  width: 56,
+                  color: kSurfaceColor,
+                  child: const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              },
               errorBuilder: (_, __, ___) => Container(
                 height: 56,
                 width: 56,
                 color: kSurfaceColor,
+                child: const Icon(Icons.music_note, color: Colors.white24),
               ),
+            )
+                : Container(
+              height: 56,
+              width: 56,
+              color: kSurfaceColor,
+              child: const Icon(Icons.music_note, color: Colors.white24),
             ),
           ),
           title: Text(
@@ -324,9 +388,8 @@ class _SearchScreenState extends State<SearchScreen> {
             style: TextStyle(color: Colors.white.withOpacity(0.65)),
           ),
           trailing: IconButton(
-            icon: const Icon(Icons.play_circle_fill,
-                color: Colors.white),
-            onPressed: () => widget.onPlay?.call(song),
+            icon: const Icon(Icons.play_circle_fill, color: Colors.white),
+            onPressed: () => _handlePlaySong(song),
           ),
         );
       },
@@ -344,8 +407,7 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title:
-        Text('Discover', style: headingStyleBuild(context)),
+        title: Text('Discover', style: headingStyleBuild(context)),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -355,8 +417,7 @@ class _SearchScreenState extends State<SearchScreen> {
           getProportionateScreenWidth(16),
           bottomInset,
         ),
-        keyboardDismissBehavior:
-        ScrollViewKeyboardDismissBehavior.onDrag,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

@@ -1,44 +1,49 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
-import '../data/dummy_data.dart' as song;
-import '../models/song.dart';
+import 'package:sangeet/components/playable.dart';
+import 'package:sangeet/models/song.dart';
+import 'package:sangeet/models/podcasts.dart';
+import 'package:sangeet/services/audio_player_service.dart';
 import '../screens/player/player_body.dart';
 
 class BottomPlayer extends StatelessWidget {
-  final Song? currentSong;
-  final bool isPlaying;
-  final VoidCallback onToggle;
-  final VoidCallback onNext;
-  final VoidCallback onPrevious;
+  final PlaybackItem? currentItem;
   final Color backgroundColor;
-
 
   const BottomPlayer({
     super.key,
-    required this.currentSong,
-    required this.isPlaying,
-    required this.onToggle,
-    required this.onNext,
-    required this.onPrevious,
+    required this.currentItem,
     required this.backgroundColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (currentSong == null) return const SizedBox.shrink();
+    if (currentItem == null) return const SizedBox.shrink();
+
+    final audio = AudioPlayerService();
+    final isPodcast = currentItem!.type == PlaybackType.podcast;
+
+    final title = isPodcast
+        ? (currentItem!.data as Podcast).title
+        : (currentItem!.data as Song).title;
+
+    final subtitle = isPodcast
+        ? (currentItem!.data as Podcast).author
+        : (currentItem!.data as Song).artist;
+
+    final imageUrl = isPodcast
+        ? (currentItem!.data as Podcast).imageUrl
+        : (currentItem!.data as Song).coverUrl;
 
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                PlayerScreen(
-                  song: currentSong!,
-                  isPlaying: isPlaying,
-                  onPlayPause: onToggle, onCollapse: () {  },
-                ),
+            builder: (_) => PlayerScreen(
+              item: currentItem!,
+              onCollapse: () => Navigator.pop(context),
+            ),
           ),
         );
       },
@@ -46,7 +51,6 @@ class BottomPlayer extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Stack(
           children: [
-            // Base container with gradient background
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Container(
@@ -63,17 +67,16 @@ class BottomPlayer extends StatelessWidget {
                     ],
                     stops: const [0.0, 0.2, 0.75, 1.0],
                   ),
-                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
             ),
-            // Blur and content on top
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
                   height: 64,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(20),
@@ -81,33 +84,36 @@ class BottomPlayer extends StatelessWidget {
                       color: Colors.white.withOpacity(0.08),
                     ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: Image.network(
-                          currentSong!.coverUrl,
+                          imageUrl,
                           height: 44,
                           width: 44,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              Container(
-                                height: 44,
-                                width: 44,
-                                color: Colors.grey,
-                              ),
+                          errorBuilder: (_, __, ___) => Container(
+                            height: 44,
+                            width: 44,
+                            color: Colors.grey,
+                            child: Icon(
+                              isPodcast
+                                  ? Icons.podcasts
+                                  : Icons.music_note,
+                              color: Colors.white24,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
-
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              currentSong!.title,
+                              title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -117,7 +123,7 @@ class BottomPlayer extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              currentSong!.artist,
+                              subtitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -129,33 +135,37 @@ class BottomPlayer extends StatelessWidget {
                         ),
                       ),
 
-                      _ControlButton(
-                        icon: Icons.skip_previous_rounded,
-                        onTap: onPrevious,
-                      ),
-
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (child, animation) {
-                          return ScaleTransition(scale: animation, child: child);
-                        },
-                        child: IconButton(
-                          key: ValueKey(isPlaying),
-                          icon: Icon(
-                            isPlaying
-                                ? Icons.pause_circle_filled_rounded
-                                : Icons.play_circle_filled_rounded,
-                            color: Colors.white,
-                            size: 36,
-                          ),
-                          onPressed: onToggle,
+                      if (!isPodcast)
+                        IconButton(
+                          icon: const Icon(Icons.skip_previous_rounded),
+                          color: Colors.white,
+                          onPressed: audio.playPrevious,
                         ),
+
+                      StreamBuilder<bool>(
+                        stream: audio.playingStream,
+                        initialData: audio.isPlaying,
+                        builder: (context, snapshot) {
+                          final playing = snapshot.data ?? false;
+                          return IconButton(
+                            icon: Icon(
+                              playing
+                                  ? Icons.pause_circle_filled_rounded
+                                  : Icons.play_circle_filled_rounded,
+                              size: 36,
+                              color: Colors.white,
+                            ),
+                            onPressed: audio.togglePlayPause,
+                          );
+                        },
                       ),
 
-                      _ControlButton(
-                        icon: Icons.skip_next_rounded,
-                        onTap: onNext,
-                      ),
+                      if (!isPodcast)
+                        IconButton(
+                          icon: const Icon(Icons.skip_next_rounded),
+                          color: Colors.white,
+                          onPressed: audio.playNext,
+                        ),
                     ],
                   ),
                 ),
@@ -164,26 +174,6 @@ class BottomPlayer extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ControlButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _ControlButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      splashRadius: 22,
-      icon: Icon(
-        icon,
-        color: Colors.white.withOpacity(0.9),
-        size: 26,
-      ),
-      onPressed: onTap,
     );
   }
 }
