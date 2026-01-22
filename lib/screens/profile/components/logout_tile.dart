@@ -50,20 +50,20 @@ class LogoutTile extends StatelessWidget {
               ),
             );
           },
-          splashColor: Colors.redAccent.withOpacity(0.1),
-          highlightColor: Colors.redAccent.withOpacity(0.05),
+          splashColor: Colors.redAccent.withValues(alpha :0.1),
+          highlightColor: Colors.redAccent.withValues(alpha :0.05),
           child: Ink(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(26),
               border: Border.all(
-                color: Colors.redAccent.withOpacity(0.3),
+                color: Colors.redAccent.withValues(alpha :0.3),
                 width: 1.5,
               ),
               gradient: LinearGradient(
                 colors: [
-                  Colors.redAccent.withOpacity(0.05),
-                  Colors.redAccent.withOpacity(0.02),
+                  Colors.redAccent.withValues(alpha :0.05),
+                  Colors.redAccent.withValues(alpha :0.02),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -75,7 +75,7 @@ class LogoutTile extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.redAccent.withOpacity(0.1),
+                    color: Colors.redAccent.withValues(alpha :0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(

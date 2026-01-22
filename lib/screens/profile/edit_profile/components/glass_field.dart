@@ -40,20 +40,20 @@ class _GlassFieldState extends State<GlassField> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.white.withOpacity(_focused ? 0.14 : 0.10),
-                  Colors.white.withOpacity(_focused ? 0.06 : 0.035),
+                  Colors.white.withValues(alpha :_focused ? 0.14 : 0.10),
+                  Colors.white.withValues(alpha :_focused ? 0.06 : 0.035),
                 ],
               ),
 
               border: Border.all(
-                color: Colors.white.withOpacity(_focused ? 0.22 : 0.12),
+                color: Colors.white.withValues(alpha :_focused ? 0.22 : 0.12),
                 width: 0.7,
               ),
 
               boxShadow: _focused
                   ? [
                 BoxShadow(
-                  color: Colors.white.withOpacity(0.10),
+                  color: Colors.white.withValues(alpha :0.10),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
@@ -74,16 +74,16 @@ class _GlassFieldState extends State<GlassField> {
                 decoration: InputDecoration(
                   labelText: widget.label,
                   labelStyle: TextStyle(
-                    color: Colors.white.withOpacity(0.55),
+                    color: Colors.white.withValues(alpha :0.55),
                     fontSize: 12,
                     letterSpacing: 0.3,
                   ),
                   floatingLabelStyle: TextStyle(
-                    color: Colors.white.withOpacity(0.75),
+                    color: Colors.white.withValues(alpha :0.75),
                   ),
                   prefixIcon: Icon(
                     widget.icon,
-                    color: Colors.white.withOpacity(_focused ? 0.85 : 0.6),
+                    color: Colors.white.withValues(alpha :_focused ? 0.85 : 0.6),
                     size: 20,
                   ),
                   border: InputBorder.none,

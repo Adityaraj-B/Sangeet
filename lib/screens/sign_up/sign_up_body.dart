@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'components/sign_up.dart';
 
-class sign_up_body extends StatelessWidget {
+class SignUpBody extends StatelessWidget {
   static const String routeName = '/sign_up';
 
-  const sign_up_body({super.key});
+  const SignUpBody({super.key});
 
   @override
   Widget build(BuildContext context) {

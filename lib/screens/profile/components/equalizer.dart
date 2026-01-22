@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
-import 'dart:math' as math;
 
 class EqualizerGraphScreen extends StatefulWidget {
   const EqualizerGraphScreen({super.key});

@@ -46,7 +46,8 @@ class _SlidingBubbleNavBarState extends State<SlidingBubbleNavBar> {
 
   void _handleTap(int index) {
     if (index == selected) return;
-    setState(() => selected = index);
+    // Don't update local state immediately - let parent decide
+    // setState(() => selected = index);
     widget.onTap(index);
   }
 
@@ -66,7 +67,7 @@ class _SlidingBubbleNavBarState extends State<SlidingBubbleNavBar> {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            color: Colors.black.withOpacity(0.14),
+            color: Colors.black.withValues(alpha :0.14),
             padding: EdgeInsets.only(
               left: widget.horizontalPadding,
               right: widget.horizontalPadding,
@@ -109,9 +110,16 @@ class _SlidingBubbleNavBarState extends State<SlidingBubbleNavBar> {
                               children: [
                                 AnimatedContainer(
                                   duration: kAnimationDuration,
-                                  transform: Matrix4.identity()
-                                    ..translate(0.0, isSelected ? -2.5 : 0.0)
-                                    ..scale(isSelected ? 1.06 : 1.0),
+                                  transform: Matrix4.translationValues(
+                                    0.0,
+                                    isSelected ? -2.5 : 0.0,
+                                    0.0,
+                                  )
+                                    * Matrix4.diagonal3Values(
+                                        isSelected ? 1.06 : 1.0,
+                                        isSelected ? 1.06 : 1.0,
+                                        1.0,
+                                      ),
                                   child: Icon(
                                     item.icon,
                                     size: isSelected ? 26 : 22,

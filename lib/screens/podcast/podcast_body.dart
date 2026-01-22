@@ -1,13 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../../components/navbar.dart';
 import '../../constants.dart';
 import '../../models/podcasts.dart';
-import '../../repositories/podcast_repo.dart';
-import 'components/Glass_mini_player.dart';
-import 'components/genre.dart';
-import 'components/featured_hero .dart';
-import 'components/section_title.dart';
 
 class PodcastsScreen extends StatefulWidget {
   final ValueChanged<Podcast> onPlayPodcast;
@@ -24,96 +18,148 @@ class PodcastsScreen extends StatefulWidget {
 }
 
 class _PodcastsScreenState extends State<PodcastsScreen> {
-  final double _horizontalPadding = 16.0;
-
-  late final List<String> genres;
-  late final Map<String, List<Podcast>> genreMap;
-  late final List<Podcast> featured;
-  late final List<Podcast> continueListening;
-
-  @override
-  void initState() {
-    super.initState();
-    featured = PodcastRepository.getFeatured();
-    genres = PodcastRepository.getGenres();
-    genreMap = PodcastRepository.getByGenre();
-    continueListening = PodcastRepository.getContinueListening();
-  }
+  static bool _hasShownDialog = false;
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
+    // Show dialog only when this screen is built and visible for the first time
+    if (!_hasShownDialog) {
+      _hasShownDialog = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showComingSoonDialog();
+        }
+      });
+    }
 
     return Scaffold(
-      extendBody: true,
       backgroundColor: kBackgroundColor,
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            _horizontalPadding,
-            18,
-            _horizontalPadding,
-            bottomInset,
-          ),
-          physics: const BouncingScrollPhysics(),
-          keyboardDismissBehavior:
-          ScrollViewKeyboardDismissBehavior.onDrag,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(
+            Icon(
+              Icons.podcasts_rounded,
+              size: 80,
+              color: Colors.white.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Podcasts',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showComingSoonDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => const _ComingSoonDialog(),
+    );
+  }
+}
+
+// Coming Soon Dialog
+class _ComingSoonDialog extends StatelessWidget {
+  const _ComingSoonDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.14),
+                  Colors.white.withValues(alpha: 0.06),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.18),
+                width: 0.6,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Podcasts',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.6,
+                Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        kAccentColor.withValues(alpha: 0.3),
+                        kAccentColor.withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.podcasts_rounded,
+                    size: 40,
+                    color: kAccentColor,
                   ),
                 ),
-                const Spacer(),
-                InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () {},
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child: Icon(
-                      Icons.filter_list,
-                      color: Colors.white54,
+                const SizedBox(height: 20),
+                const Text(
+                  'Coming Soon',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Podcast feature is currently under development. Stay tuned for exciting updates!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kAccentColor,
+                      foregroundColor: kBackgroundColor,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Got it',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
-
-            const SizedBox(height: 20),
-
-            if (featured.isNotEmpty)
-              FeaturedHero(podcast: featured.first),
-
-            const SizedBox(height: 28),
-
-            if (continueListening.isNotEmpty) ...[
-              const SectionTitle('Continue listening'),
-              const SizedBox(height: 12),
-              GlassMiniPlayer(
-                podcast: continueListening.first,
-                onPlay: widget.onPlayPodcast,
-              ),
-
-              const SizedBox(height: 26),
-            ],
-
-            for (final g in genres)
-              if (genreMap[g]?.isNotEmpty ?? false) ...[
-                SectionTitle(g),
-                const SizedBox(height: 12),
-                GenreCarousel(podcasts: genreMap[g]!),
-                const SizedBox(height: 22),
-              ],
-
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
     );

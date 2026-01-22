@@ -19,28 +19,21 @@ class AlbumArt extends StatelessWidget {
         height: 280,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
+          image: DecorationImage(
+            image: NetworkImage(coverUrl),
+            fit: BoxFit.cover,
+          ),
+          border: Border.all(
+            color: Colors.white.withValues(alpha :0.08),
+            width: 2,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.45),
+              color: Colors.black.withValues(alpha :0.45),
               blurRadius: 40,
               spreadRadius: 6,
             ),
           ],
-        ),
-        child: ClipOval(
-          child: Image.network(
-            coverUrl,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              );
-            },
-            errorBuilder: (_, __, ___) => const Center(
-              child: Icon(Icons.music_note, size: 64),
-            ),
-          ),
         ),
       ),
     );

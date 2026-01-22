@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../playlists/playlists_screen.dart';
+import '../../playlist/components/playlist_screen.dart';
 import '../../../models/song.dart';
 
 class LibraryFilters extends StatelessWidget {

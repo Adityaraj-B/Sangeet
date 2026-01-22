@@ -6,10 +6,10 @@ class PlaylistGrid extends StatelessWidget {
   final List<int> visibleIndices;
 
   const PlaylistGrid({
-    Key? key,
+    super.key,
     required this.playlists,
     required this.visibleIndices,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -53,8 +53,8 @@ class PlaylistGrid extends StatelessWidget {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Colors.black.withOpacity(0.55),
-                          Colors.black.withOpacity(0.15),
+                          Colors.black.withValues(alpha :0.55),
+                          Colors.black.withValues(alpha :0.15),
                         ],
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,

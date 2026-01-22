@@ -23,7 +23,7 @@ class _TitleWithAuthor extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           podcast.author,
-          style: TextStyle(color: kPrimaryColor.withOpacity(0.85), fontSize: 13),
+          style: TextStyle(color: kPrimaryColor.withValues(alpha: 0.85), fontSize: 13),
         ),
       ],
     );
@@ -39,10 +39,10 @@ class _GenreBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: kPrimaryColor.withOpacity(0.12),
+        color: kPrimaryColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(color: kAccentColor.withOpacity(0.12), blurRadius: 18, offset: const Offset(0, 10))
+          BoxShadow(color: kAccentColor.withValues(alpha: 0.12), blurRadius: 18, offset: const Offset(0, 10))
         ],
       ),
       child: Text(
@@ -104,7 +104,7 @@ class _FeaturedHeroInternal extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [kBackgroundColor.withOpacity(0.04), kSurfaceColor.withOpacity(0.72)],
+                  colors: [kBackgroundColor.withValues(alpha: 0.04), kSurfaceColor.withValues(alpha: 0.72)],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),

@@ -109,7 +109,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       child: Text(
         title,
         style: TextStyle(
-          color: Colors.white.withOpacity(0.85),
+          color: Colors.white.withValues(alpha :0.85),
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
@@ -156,7 +156,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               icon,
               color: destructive
                   ? Colors.redAccent
-                  : Colors.white.withOpacity(0.9),
+                  : Colors.white.withValues(alpha :0.9),
               size: 22,
             ),
             const SizedBox(width: 14),
@@ -169,7 +169,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
             ),
             Icon(
               Icons.chevron_right,
-              color: Colors.white.withOpacity(0.3),
+              color: Colors.white.withValues(alpha :0.3),
             ),
           ],
         ),
@@ -197,7 +197,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         Text(
           subtitle,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
+            color: Colors.white.withValues(alpha :0.6),
             fontSize: 13,
             height: 1.3,
           ),
@@ -221,12 +221,12 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.white.withOpacity(0.10),
-                  Colors.white.withOpacity(0.03),
+                  Colors.white.withValues(alpha :0.10),
+                  Colors.white.withValues(alpha :0.03),
                 ],
               ),
               border: Border.all(
-                color: Colors.white.withOpacity(0.18),
+                color: Colors.white.withValues(alpha :0.18),
                 width: 0.8,
               ),
             ),

@@ -23,10 +23,10 @@ class GlassMiniPlayer extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: kPrimaryColor.withOpacity(0.03),
+            color: kPrimaryColor.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: kPrimaryColor.withOpacity(0.06)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.45), blurRadius: 24, offset: const Offset(0, 8))],
+            border: Border.all(color: kPrimaryColor.withValues(alpha: 0.06)),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 8))],
           ),
           child: Row(
             children: [
@@ -61,7 +61,7 @@ class GlassMiniPlayer extends StatelessWidget {
       const SizedBox(height: 4),
       Text(podcast.author,
           style: TextStyle(
-              color: kPrimaryColor.withOpacity(0.72),
+              color: kPrimaryColor.withValues(alpha: 0.72),
               fontSize: 12
           ),
           maxLines: 1,
