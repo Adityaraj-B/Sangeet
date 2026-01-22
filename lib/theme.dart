@@ -50,7 +50,7 @@ TextTheme textTheme() {
 AppBarTheme appBarTheme() {
   return AppBarTheme(
     centerTitle: true,
-    color: Colors.white,
+    backgroundColor: Colors.white,
     elevation: 0,
     systemOverlayStyle: SystemUiOverlayStyle.dark,
     iconTheme: IconThemeData(color: Colors.black),

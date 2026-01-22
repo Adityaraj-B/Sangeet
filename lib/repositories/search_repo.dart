@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:sangeet/models/song.dart';
+import '../models/song.dart';
+import '../models/artist.dart'; // Make sure this import exists
 
 class SearchRepository {
-  static const String baseUrl =
-      'https://jiosaavn-api.acefaroff.workers.dev/api';
+  static const String baseUrl = 'https://vercelapi-gamma.vercel.app/api';
+
+  // --- SONG SEARCH ---
 
   Future<List<Song>> search(String query, {int limit = 20}) async {
     if (query.trim().isEmpty) return [];
@@ -19,11 +21,33 @@ class SearchRepository {
       if (res.statusCode != 200) return [];
 
       return _parseSongs(res.body);
-    } catch (e) {
-      print('Search error: $e');
+    } catch (_) {
       return [];
     }
   }
+
+  // --- ARTIST SEARCH (Added) ---
+
+  Future<List<Artist>> searchArtists(String query, {int limit = 10}) async {
+    if (query.trim().isEmpty) return [];
+
+    try {
+      final uri = Uri.parse(
+        '$baseUrl/search/artists?query=${Uri.encodeComponent(query)}&limit=$limit',
+      );
+
+      final res = await http.get(uri);
+
+      if (res.statusCode != 200) return [];
+
+      return _parseArtists(res.body);
+    } catch (e) {
+      print('Error searching artists: $e');
+      return [];
+    }
+  }
+
+  // --- SUGGESTIONS ---
 
   Future<List<String>> suggestions(String query, {int limit = 5}) async {
     if (query.trim().isEmpty) return [];
@@ -31,6 +55,8 @@ class SearchRepository {
     final songs = await search(query, limit: limit);
     return songs.map((s) => s.title).toSet().toList();
   }
+
+  // --- PARSING HELPERS ---
 
   List<Song> _parseSongs(String body) {
     try {
@@ -46,17 +72,33 @@ class SearchRepository {
       }
 
       return list.map(_parseSingleSong).toList();
-    } catch (e) {
-      print('Parse songs error: $e');
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<Artist> _parseArtists(String body) {
+    try {
+      final decoded = json.decode(body);
+      final data = decoded['data'];
+
+      List list = [];
+      if (data is List) {
+        list = data;
+      } else if (data is Map && data['results'] is List) {
+        list = data['results'];
+      }
+
+      return list.map(_parseSingleArtist).toList();
+    } catch (_) {
       return [];
     }
   }
 
   Song _parseSingleSong(dynamic e) {
-    final id = e['id']?.toString() ?? '';
-    final title = e['name']?.toString() ?? 'Unknown';
+    final String id = e['id']?.toString() ?? '';
+    final String title = e['name']?.toString() ?? 'Unknown';
 
-    // Parse artist
     String artist = 'Unknown';
     if (e['artists']?['primary'] is List) {
       artist = (e['artists']['primary'] as List)
@@ -67,29 +109,20 @@ class SearchRepository {
       artist = e['primaryArtists'].toString();
     }
 
-    // Parse cover image
     String coverUrl = '';
     if (e['image'] is List && (e['image'] as List).isNotEmpty) {
-      final images = e['image'] as List;
-      coverUrl = images.last['link']?.toString() ??
-          images.last['url']?.toString() ??
-          '';
+      final img = (e['image'] as List).last;
+      coverUrl = img['link']?.toString() ?? img['url']?.toString() ?? '';
     }
 
-    // Parse duration
-    final durationSeconds =
+    final int durationSeconds =
         int.tryParse(e['duration']?.toString() ?? '') ?? 0;
 
-    // Parse stream URL - THIS IS THE KEY FIX!
     String? streamUrl;
     if (e['downloadUrl'] is List && (e['downloadUrl'] as List).isNotEmpty) {
-      final downloads = e['downloadUrl'] as List;
-      // Get the highest quality (usually last in array)
-      streamUrl = downloads.last['link']?.toString() ??
-          downloads.last['url']?.toString();
+      final dl = (e['downloadUrl'] as List).last;
+      streamUrl = dl['link']?.toString() ?? dl['url']?.toString();
     }
-
-    print('Parsed song: $title, streamUrl: ${streamUrl?.substring(0, 50)}...');
 
     return Song(
       id: id,
@@ -97,7 +130,34 @@ class SearchRepository {
       artist: artist,
       coverUrl: coverUrl,
       duration: Duration(seconds: durationSeconds),
-      streamUrl: streamUrl, // Already included in search results!
+      streamUrl: streamUrl,
+    );
+  }
+
+  Artist _parseSingleArtist(dynamic e) {
+    final String id = e['id']?.toString() ?? '';
+    final String name = e['name']?.toString() ?? e['title']?.toString() ?? 'Unknown';
+    final String type = e['role']?.toString() ?? 'Artist';
+
+    String imageUrl = '';
+    if (e['image'] is List && (e['image'] as List).isNotEmpty) {
+      final img = (e['image'] as List).last;
+      imageUrl = img['link']?.toString() ?? img['url']?.toString() ?? '';
+    }
+
+    String bio = '';
+    if (e['bio'] is List && (e['bio'] as List).isNotEmpty) {
+      bio = e['bio'][0]['text']?.toString() ?? '';
+    } else if (e['bio'] is String) {
+      bio = e['bio'];
+    }
+
+    return Artist(
+      id: id,
+      name: name,
+      imageUrl: imageUrl,
+      type: type,
+      bio: bio,
     );
   }
 }

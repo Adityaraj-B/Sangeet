@@ -26,8 +26,8 @@ class ProfileTile extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(18),
               onTap: onTap,
-              splashColor: Colors.white.withOpacity(0.06),
-              highlightColor: Colors.white.withOpacity(0.04),
+              splashColor: Colors.white.withValues(alpha :0.06),
+              highlightColor: Colors.white.withValues(alpha :0.04),
               child: Container(
                 padding:
                 const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -37,12 +37,12 @@ class ProfileTile extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.white.withOpacity(0.10),
-                      Colors.white.withOpacity(0.03),
+                      Colors.white.withValues(alpha :0.10),
+                      Colors.white.withValues(alpha :0.03),
                     ],
                   ),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.18),
+                    color: Colors.white.withValues(alpha :0.18),
                     width: 0.8,
                   ),
                 ),
@@ -50,7 +50,7 @@ class ProfileTile extends StatelessWidget {
                   children: [
                     Icon(
                       icon,
-                      color: Colors.white.withOpacity(0.92),
+                      color: Colors.white.withValues(alpha :0.92),
                       size: 22,
                     ),
                     const SizedBox(width: 16),
@@ -69,7 +69,7 @@ class ProfileTile extends StatelessWidget {
 
                     Icon(
                       Icons.chevron_right,
-                      color: Colors.white.withOpacity(0.28),
+                      color: Colors.white.withValues(alpha :0.28),
                       size: 20,
                     ),
                   ],

@@ -2,47 +2,31 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 import 'package:sangeet/models/song.dart';
+import 'package:provider/provider.dart';
+import '../../../services/like_service.dart';
+
 
 class LikedSongsScreen extends StatelessWidget {
-  final List<Song> likedSongs;
   final ValueChanged<Song> onPlaySong;
 
   const LikedSongsScreen({
     super.key,
-    required this.likedSongs,
     required this.onPlaySong,
   });
 
   @override
   Widget build(BuildContext context) {
+    final likedSongs = context.watch<LikeService>().likedSongs;
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: kBackgroundColor,
       body: Stack(
         children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF141414),
-                  Colors.black,
-                ],
-              ),
-            ),
-          ),
-
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-            child: Container(color: Colors.black.withOpacity(0.2)),
-          ),
-
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _TopBar(count: likedSongs.length),
-
                 Expanded(
                   child: likedSongs.isEmpty
                       ? _EmptyState()
@@ -69,6 +53,7 @@ class LikedSongsScreen extends StatelessWidget {
     );
   }
 }
+
 class _TopBar extends StatelessWidget {
   final int count;
   const _TopBar({required this.count});
@@ -98,7 +83,7 @@ class _TopBar extends StatelessWidget {
               Text(
                 '$count songs',
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.5),
+                  color: Colors.white.withValues(alpha :0.5),
                   fontSize: 12,
                 ),
               ),
@@ -132,10 +117,10 @@ class _LikedSongTile extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.04),
+                color: Colors.white.withValues(alpha :0.04),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha :0.06),
                 ),
               ),
               child: Row(
@@ -177,7 +162,7 @@ class _LikedSongTile extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.55),
+                            color: Colors.white.withValues(alpha :0.55),
                             fontSize: 12,
                           ),
                         ),
@@ -187,7 +172,7 @@ class _LikedSongTile extends StatelessWidget {
 
                   Icon(
                     Icons.play_arrow_rounded,
-                    color: Colors.white.withOpacity(0.7),
+                    color: Colors.white.withValues(alpha :0.7),
                   ),
                 ],
               ),
@@ -206,12 +191,12 @@ class _EmptyState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.favorite_border,
-              color: Colors.white.withOpacity(0.3), size: 56),
+              color: Colors.white.withValues(alpha :0.3), size: 56),
           const SizedBox(height: 14),
           Text(
             'No liked songs yet',
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha :0.6),
               fontSize: 14,
             ),
           ),

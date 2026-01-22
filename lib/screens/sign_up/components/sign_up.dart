@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:sangeet/constants.dart';
 import '../../../services/auth.dart';
+import '../../../services/playlist_provider.dart';
 import '../../../size_config.dart';
+import '../../../utils/validators.dart';
 import '../../body.dart';
-import '../../home/home_body.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -18,6 +20,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   bool _loading = false;
+  bool _googleLoading = false;
   String? _error;
 
   @override
@@ -30,22 +33,52 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_passCtrl.text != _confirmCtrl.text) {
-      setState(() => _error = kMatchPassError);
-      return;
-    }
 
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    await AuthService.signUp(_emailCtrl.text.trim(), _passCtrl.text);
-    if (!mounted) return;
-    setState(() => _loading = false);
+    try {
+      await AuthService.signUp(_emailCtrl.text.trim(), _passCtrl.text);
+      if (!mounted) return;
+      setState(() => _loading = false);
 
-    Navigator.of(context).pushReplacementNamed(Body.routeName);
+      // Initialize playlist provider for the newly created user
+      context.read<PlaylistProvider>().initialize();
+      Navigator.of(context).pushReplacementNamed(Body.routeName);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
 
+  Future<void> _signUpWithGoogle() async {
+    setState(() {
+      _googleLoading = true;
+      _error = null;
+    });
+
+    try {
+      final credential = await AuthService.signInWithGoogle();
+      if (!mounted) return;
+
+      if (credential != null) {
+        context.read<PlaylistProvider>().initialize();
+        Navigator.of(context).pushReplacementNamed(Body.routeName);
+      } else {
+        setState(() => _googleLoading = false);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _googleLoading = false;
+        _error = e.toString();
+      });
+    }
   }
 
   @override
@@ -60,13 +93,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
       backgroundColor: kBackgroundColor,
       body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: screenW * 0.06, vertical: verticalPad),
+          padding: EdgeInsets.symmetric(
+              horizontal: screenW * 0.06, vertical: verticalPad),
           child: Center(
             child: SingleChildScrollView(
               child: Column(children: [
-                Text('Create account', style: headingStyleBuild(context, size: titleSize)),
+                Text('Create account',
+                    style: headingStyleBuild(context, size: titleSize)),
                 SizedBox(height: getProportionateScreenHeight(12)),
-                Text('Start your music journey', style: TextStyle(color: kMutedTextColor)),
+                Text('Start your music journey',
+                    style: TextStyle(color: kMutedTextColor)),
                 SizedBox(height: getProportionateScreenHeight(22)),
                 Form(
                   key: _formKey,
@@ -74,40 +110,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     TextFormField(
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
-                      style: TextStyle(color: kPrimaryColor, fontSize: getProportionateScreenWidth(14)),
-                      decoration: inputDecorationBuild(context, 'Email', verticalPadding: inputPad),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return kEmailNullError;
-                        if (!emailValidatorRegExp.hasMatch(v.trim())) return kInvalidEmailError;
-                        return null;
-                      },
+                      validator: Validators.validateEmail,
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        hintText: 'Enter your email',
+                      ),
                     ),
-                    SizedBox(height: getProportionateScreenHeight(14)),
+                    SizedBox(height: getProportionateScreenHeight(16)),
                     TextFormField(
                       controller: _passCtrl,
                       obscureText: true,
-                      style: TextStyle(color: kPrimaryColor, fontSize: getProportionateScreenWidth(14)),
-                      decoration: inputDecorationBuild(context, 'Password', verticalPadding: inputPad),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return kPassNullError;
-                        if (v.length < 8) return kShortPassError;
-                        return null;
-                      },
+                      validator: Validators.validatePassword,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        hintText:
+                            'Minimum 8 characters, include uppercase, lowercase, number & special character',
+                      ),
                     ),
-                    SizedBox(height: getProportionateScreenHeight(14)),
+                    SizedBox(height: getProportionateScreenHeight(16)),
                     TextFormField(
                       controller: _confirmCtrl,
                       obscureText: true,
-                      style: TextStyle(color: kPrimaryColor, fontSize: getProportionateScreenWidth(14)),
-                      decoration: inputDecorationBuild(context, 'Confirm Password', verticalPadding: inputPad),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return kPassNullError;
-                        return null;
-                      },
+                      validator: (v) =>
+                          Validators.validateConfirmPassword(v, _passCtrl.text),
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password',
+                        hintText: 'Re-enter your password',
+                      ),
                     ),
                     SizedBox(height: getProportionateScreenHeight(18)),
                     if (_error != null) ...[
-                      Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                      Text(_error!,
+                          style: const TextStyle(color: Colors.redAccent)),
                       SizedBox(height: getProportionateScreenHeight(12)),
                     ],
                     SizedBox(
@@ -117,12 +151,74 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: kAccentColor,
                           foregroundColor: Colors.black,
-                          padding: EdgeInsets.symmetric(vertical: getProportionateScreenHeight(14)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(getProportionateScreenWidth(12))),
+                          padding: EdgeInsets.symmetric(
+                              vertical: getProportionateScreenHeight(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(getProportionateScreenWidth(12))),
                           textStyle: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        child: _loading ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) : const Text('Create Account'),
+                        child: _loading
+                            ? SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.black))
+                            : const Text('Create Account'),
                       ),
+                    ),
+                    SizedBox(height: getProportionateScreenHeight(16)),
+                    // Divider with "or"
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: kMutedTextColor.withOpacity(0.3))),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: getProportionateScreenWidth(12)),
+                          child: Text('or', style: TextStyle(color: kMutedTextColor, fontSize: 14)),
+                        ),
+                        Expanded(child: Divider(color: kMutedTextColor.withOpacity(0.3))),
+                      ],
+                    ),
+                    SizedBox(height: getProportionateScreenHeight(16)),
+                    // Google Sign Up Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _googleLoading ? null : _signUpWithGoogle,
+                        icon: _googleLoading
+                            ? SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: kPrimaryColor),
+                              )
+                            : Image.network(
+                                'https://www.google.com/favicon.ico',
+                                height: 20,
+                                width: 20,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(Icons.g_mobiledata, color: kPrimaryColor, size: 24),
+                              ),
+                        label: Text(_googleLoading ? 'Signing up...' : 'Continue with Google'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: kPrimaryColor,
+                          padding: EdgeInsets.symmetric(vertical: getProportionateScreenHeight(14)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(getProportionateScreenWidth(12)),
+                          ),
+                          side: BorderSide(color: kMutedTextColor.withOpacity(0.3)),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: getProportionateScreenHeight(16)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Already have an account? ", style: TextStyle(color: kMutedTextColor)),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Text('Sign In', style: TextStyle(color: kAccentColor, fontWeight: FontWeight.bold)),
+                        )
+                      ],
                     ),
                   ]),
                 ),

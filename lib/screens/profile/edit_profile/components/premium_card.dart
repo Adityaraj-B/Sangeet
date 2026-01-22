@@ -27,22 +27,22 @@ class PremiumCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            kAccentColor.withOpacity(0.85),
-            kAccentColor.withOpacity(0.55),
+            kAccentColor.withValues(alpha :0.85),
+            kAccentColor.withValues(alpha :0.55),
           ],
         )
             : LinearGradient(
           colors: [
-            Colors.white.withOpacity(0.10),
-            Colors.white.withOpacity(0.04),
+            Colors.white.withValues(alpha :0.10),
+            Colors.white.withValues(alpha :0.04),
           ],
         ),
 
         // ✨ Glass border
         border: Border.all(
           color: isPremium
-              ? Colors.white.withOpacity(0.35)
-              : Colors.white.withOpacity(0.14),
+              ? Colors.white.withValues(alpha :0.35)
+              : Colors.white.withValues(alpha :0.14),
           width: 0.7,
         ),
 
@@ -50,14 +50,14 @@ class PremiumCard extends StatelessWidget {
         boxShadow: isPremium
             ? [
           BoxShadow(
-            color: kAccentColor.withOpacity(0.35),
+            color: kAccentColor.withValues(alpha :0.35),
             blurRadius: 22,
             offset: const Offset(0, 8),
           ),
         ]
             : [
           BoxShadow(
-            color: Colors.black.withOpacity(0.35),
+            color: Colors.black.withValues(alpha :0.35),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -105,8 +105,8 @@ class PremiumCard extends StatelessWidget {
                                 : 'Unlock premium features',
                             style: TextStyle(
                               color: isPremium
-                                  ? kTextColorDark.withOpacity(0.8)
-                                  : Colors.white.withOpacity(0.55),
+                                  ? kTextColorDark.withValues(alpha :0.8)
+                                  : Colors.white.withValues(alpha :0.55),
                               fontSize: 11.5,
                             ),
                           ),
@@ -116,12 +116,12 @@ class PremiumCard extends StatelessWidget {
 
                     Switch(
                       value: isPremium,
-                      activeColor: kBackgroundColor,
+                      activeThumbColor: kBackgroundColor,
                       activeTrackColor:
-                      kTextColorDark.withOpacity(0.5),
+                      kTextColorDark.withValues(alpha :0.5),
                       inactiveThumbColor: kAccentColor,
                       inactiveTrackColor:
-                      kAccentColor.withOpacity(0.35),
+                      kAccentColor.withValues(alpha :0.35),
                       onChanged: onChanged,
                     ),
                   ],
@@ -134,9 +134,9 @@ class PremiumCard extends StatelessWidget {
                         horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      color: kTextColorDark.withOpacity(0.15),
+                      color: kTextColorDark.withValues(alpha :0.15),
                       border: Border.all(
-                        color: kTextColorDark.withOpacity(0.25),
+                        color: kTextColorDark.withValues(alpha :0.25),
                         width: 0.6,
                       ),
                     ),
@@ -153,7 +153,7 @@ class PremiumCard extends StatelessWidget {
                             'Ad-free • High quality • Offline listening',
                             style: TextStyle(
                               color:
-                              kTextColorDark.withOpacity(0.9),
+                              kTextColorDark.withValues(alpha :0.9),
                               fontSize: 11.5,
                             ),
                           ),

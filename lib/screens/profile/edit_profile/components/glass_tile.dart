@@ -41,18 +41,18 @@ class _GlassTileState extends State<GlassTile> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  Colors.white.withOpacity(_pressed ? 0.14 : 0.10),
-                  Colors.white.withOpacity(_pressed ? 0.06 : 0.035),
+                  Colors.white.withValues(alpha :_pressed ? 0.14 : 0.10),
+                  Colors.white.withValues(alpha :_pressed ? 0.06 : 0.035),
                 ],
               ),
               border: Border.all(
-                color: Colors.white.withOpacity(_pressed ? 0.22 : 0.12),
+                color: Colors.white.withValues(alpha :_pressed ? 0.22 : 0.12),
                 width: 0.7,
               ),
               boxShadow: _pressed
                   ? [
                 BoxShadow(
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha :0.08),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
@@ -63,8 +63,8 @@ class _GlassTileState extends State<GlassTile> {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(18),
-                splashColor: Colors.white.withOpacity(0.05),
-                highlightColor: Colors.white.withOpacity(0.03),
+                splashColor: Colors.white.withValues(alpha :0.05),
+                highlightColor: Colors.white.withValues(alpha :0.03),
                 onTapDown: (_) => setState(() => _pressed = true),
                 onTapCancel: () => setState(() => _pressed = false),
                 onTapUp: (_) => setState(() => _pressed = false),
@@ -78,7 +78,7 @@ class _GlassTileState extends State<GlassTile> {
                     children: [
                       Icon(
                         widget.icon,
-                        color: Colors.white.withOpacity(_pressed ? 0.9 : 0.75),
+                        color: Colors.white.withValues(alpha :_pressed ? 0.9 : 0.75),
                         size: 20,
                       ),
                       const SizedBox(width: 14),
@@ -101,7 +101,7 @@ class _GlassTileState extends State<GlassTile> {
                               Text(
                                 widget.subtitle!,
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.45),
+                                  color: Colors.white.withValues(alpha :0.45),
                                   fontSize: 11.5,
                                 ),
                               ),

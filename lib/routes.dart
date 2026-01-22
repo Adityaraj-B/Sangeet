@@ -6,8 +6,8 @@ import 'package:sangeet/screens/sign_up/sign_up_body.dart';
 Map<String, WidgetBuilder> routes = {
   Body.routeName: (ctx) => const Body(),
 
-  sign_in_body.routeName: (ctx) => const sign_in_body(),
-  sign_up_body.routeName: (ctx) => const sign_up_body(),
+  SignInBody.routeName: (ctx) => const SignInBody(),
+  SignUpBody.routeName: (ctx) => const SignUpBody(),
 
   // FULL-SCREEN pages ONLY below this line
   // '/player': (ctx) => PlayerScreen(),

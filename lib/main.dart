@@ -1,20 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:provider/provider.dart';
+import 'package:sangeet/constants.dart';
 import 'package:sangeet/routes.dart';
 import 'package:sangeet/screens/body.dart';
 import 'package:sangeet/screens/sign_in/sign_in_body.dart';
 import 'package:sangeet/services/auth.dart';
+import 'package:sangeet/services/playlist_provider.dart';
+import 'package:sangeet/services/like_service.dart';
+import 'package:sangeet/services/audio_player_service.dart';
+import 'firebase_options.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => PlaylistProvider(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => LikeService()..load(),
+        ),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  // Helper to decide which initial route to use
-  Future<String> _chooseInitialRoute() async {
-    final logged = await AuthService.isLoggedIn();
-    return logged ? Body.routeName : sign_in_body.routeName;
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Initialize audio service after first frame is rendered
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AudioPlayerService().initialize();
+    });
   }
 
   @override
@@ -25,10 +57,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         fontFamily: 'PlayfairDisplay',
         brightness: Brightness.dark,
-        primarySwatch: Colors.deepPurple,
+        primarySwatch: Colors.amber,
         scaffoldBackgroundColor: Colors.black,
         useMaterial3: true,
-        // Add this to prevent Material 3 from overriding custom transitions
         pageTransitionsTheme: const PageTransitionsTheme(
           builders: {
             TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
@@ -36,18 +67,14 @@ class MyApp extends StatelessWidget {
           },
         ),
       ),
-      // keep routes map as before
       routes: routes,
-      // Use a splash router as the app's home so we can decide where to go without changing other navigation code.
       home: const SplashRouter(),
     );
   }
 }
 
-/// A small widget that checks login state and redirects accordingly.
-/// Keeps your existing routes and `body.routeName` untouched.
 class SplashRouter extends StatefulWidget {
-  const SplashRouter({Key? key}) : super(key: key);
+  const SplashRouter({super.key});
 
   @override
   State<SplashRouter> createState() => _SplashRouterState();
@@ -62,26 +89,23 @@ class _SplashRouterState extends State<SplashRouter> {
 
   Future<void> _checkAndNavigate() async {
     final logged = await AuthService.isLoggedIn();
-    // Delay is optional — shows the circular spinner briefly so user sees something
-    // await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
+
     if (logged) {
-      // Navigate to your body/home route (keeps your existing routes intact)
       Navigator.of(context).pushReplacementNamed(Body.routeName);
     } else {
-      // Navigate to sign-in route; ensure routes map contains this key
-      Navigator.of(context).pushReplacementNamed(sign_in_body.routeName);
+      Navigator.of(context).pushReplacementNamed(SignInBody.routeName);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Simple centered progress indicator while we check login state.
-    // Keep styling consistent with your app theme.
     return const Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: kBackgroundColor,
       body: Center(
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(
+          color: kAccentColor,
+        ),
       ),
     );
   }

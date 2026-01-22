@@ -7,7 +7,6 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onPrevious;
   final Color accentColor;
-  final bool isPodcast;
 
   const PlayerControls({
     super.key,
@@ -16,7 +15,6 @@ class PlayerControls extends StatelessWidget {
     required this.onNext,
     required this.onPrevious,
     required this.accentColor,
-    required this.isPodcast,
   });
 
   @override
@@ -26,41 +24,39 @@ class PlayerControls extends StatelessWidget {
       children: [
         IconButton(
           iconSize: 28,
-          icon: Icon(
-            Icons.skip_previous,
-            color: isPodcast ? accentColor.withOpacity(0.4) : accentColor,
-          ),
-          onPressed: isPodcast ? null : onPrevious,
+          icon: Icon(Icons.skip_previous, color: accentColor),
+          onPressed: onPrevious,
         ),
 
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
 
         GestureDetector(
           onTap: onPlayPause,
-          child: Container(
-            height: 64,
-            width: 64,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: kPrimaryColor,
-            ),
-            child: Icon(
-              isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.black,
-              size: 36,
+          child: AnimatedScale(
+            scale: isPlaying ? 1.0 : 1.05,
+            duration: const Duration(milliseconds: 150),
+            child: Container(
+              height: 64,
+              width: 64,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: kPrimaryColor,
+              ),
+              child: Icon(
+                isPlaying ? Icons.pause : Icons.play_arrow,
+                color: Colors.black,
+                size: 36,
+              ),
             ),
           ),
         ),
 
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
 
         IconButton(
           iconSize: 28,
-          icon: Icon(
-            Icons.skip_next,
-            color: isPodcast ? accentColor.withOpacity(0.4) : accentColor,
-          ),
-          onPressed: isPodcast ? null : onNext,
+          icon: Icon(Icons.skip_next, color: accentColor),
+          onPressed: onNext,
         ),
       ],
     );

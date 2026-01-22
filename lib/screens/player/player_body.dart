@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:sangeet/constants.dart';
-import 'package:sangeet/components/playable.dart';
+import 'package:provider/provider.dart';
 import 'package:sangeet/models/song.dart';
-import 'package:sangeet/models/podcasts.dart';
 import 'package:sangeet/services/audio_player_service.dart';
+import '../../services/like_service.dart';
 
 import 'components/player_top_bar.dart';
 import 'components/album_art.dart';
@@ -14,14 +14,13 @@ import 'components/progress_bar.dart';
 import 'components/player_controls.dart';
 import 'components/view_toggle.dart';
 import 'components/player_actions.dart';
+import 'components/artist_view.dart';
 
 class PlayerScreen extends StatefulWidget {
-  final PlaybackItem item;
   final VoidCallback onCollapse;
 
   const PlayerScreen({
     super.key,
-    required this.item,
     required this.onCollapse,
   });
 
@@ -34,24 +33,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   final AudioPlayerService _audioService = AudioPlayerService();
 
   late final AnimationController _discAnim;
-  bool _liked = false;
-  bool _showLyrics = false;
-  ColorScheme? _scheme;
+  PlayerViewMode _viewMode = PlayerViewMode.song;
+  StreamSubscription<bool>? _playingSub;
 
-  bool get _isPodcast => widget.item.type == PlaybackType.podcast;
-
-  String get _imageUrl => _isPodcast
-      ? (widget.item.data as Podcast).imageUrl
-      : (widget.item.data as Song).coverUrl;
-
-  Future<void> _loadScheme() async {
-    final scheme = await ColorScheme.fromImageProvider(
-      provider: NetworkImage(_imageUrl),
-      brightness: Brightness.dark,
-    );
-
-    if (mounted) setState(() => _scheme = scheme);
-  }
+  Song? get _currentSong => _audioService.currentSong;
 
   @override
   void initState() {
@@ -62,166 +47,180 @@ class _PlayerScreenState extends State<PlayerScreen>
       duration: const Duration(seconds: 20),
     );
 
-    if (!_isPodcast) {
-      final song = widget.item.data as Song;
-      final current = _audioService.currentSong;
+    _playingSub = _audioService.playingStream.listen((playing) {
+      if (!mounted) return;
+      playing ? _discAnim.repeat() : _discAnim.stop();
+    });
 
-      // 🔒 Only play if it's a NEW song
-      if (current == null || current.id != song.id) {
-        _audioService.playSong(song);
-      }
-
-      _audioService.playingStream.listen((playing) {
-        if (!mounted) return;
-        playing ? _discAnim.repeat() : _discAnim.stop();
-      });
+    // Start animation if already playing
+    if (_audioService.isPlaying) {
+      _discAnim.repeat();
     }
-    _loadScheme();
   }
 
   @override
   void dispose() {
+    _playingSub?.cancel();
     _discAnim.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).padding.bottom + 24;
-    final accent = _scheme?.primary ?? Colors.white;
-    final albumColor = _scheme != null
-        ? HSLColor.fromColor(_scheme!.primary)
-        .withLightness(0.48)
-        .withSaturation(0.8)
-        .toColor()
-        : kBackgroundColor;
+    final likeService = context.watch<LikeService>();
 
-    return Scaffold(
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onVerticalDragEnd: (details) {
-          final velocity = details.primaryVelocity ?? 0;
-          if (velocity > 600) {
-            widget.onCollapse();
-          }
-        },
-        child: Stack(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 700),
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0, -0.65),
-                  radius: 1.25,
-                  colors: [
-                    albumColor.withOpacity(0.9),
-                    albumColor.withOpacity(0.45),
-                    Colors.black.withOpacity(0.6),
-                  ],
-                ),
+    // Rebuild when queue/currentSong changes.
+    return AnimatedBuilder(
+      animation: _audioService.queue,
+      builder: (context, _) {
+        final song = _currentSong;
+        if (song == null) {
+          // No song playing, show empty state
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.music_note, size: 64, color: Colors.white38),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No song playing',
+                    style: TextStyle(color: Colors.white54, fontSize: 16),
+                  ),
+                  const SizedBox(height: 24),
+                  TextButton(
+                    onPressed: widget.onCollapse,
+                    child: Text('Go Back', style: TextStyle(color: Colors.white)),
+                  ),
+                ],
               ),
             ),
+          );
+        }
 
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 42, sigmaY: 42),
-              child: Container(color: Colors.black.withOpacity(0.08)),
-            ),
+        final isLiked = likeService.isLiked(song);
+        final bottomInset = MediaQuery.of(context).padding.bottom + 24;
 
-            SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset),
-                child: Column(
-                  children: [
-                    PlayerTopBar(
-                      liked: _liked,
-                      onLikeToggle: () => setState(() => _liked = !_liked),
-                      onCollapse: () {
-                        widget.onCollapse();
-                        //Navigator.pop(context, true);
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 400),
-                      child: _isPodcast
-                          ? AlbumArt(
-                        coverUrl: _imageUrl,
-                        rotation: const AlwaysStoppedAnimation(0),
-                      )
-                          : (_showLyrics
-                          ? LyricsView()
-                          : AlbumArt(
-                        coverUrl: _imageUrl,
-                        rotation: _discAnim,
-                      )),
-                    ),
-
-                    const SizedBox(height: 26),
-
-                    _isPodcast
-                        ? Text(
-                      (widget.item.data as Podcast).title,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragEnd: (details) {
+              if ((details.primaryVelocity ?? 0) > 600) {
+                widget.onCollapse();
+              }
+            },
+            child: Stack(
+              children: [
+                // Background blur
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 800),
+                  child: SizedBox.expand(
+                    key: ValueKey(song.id),
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 90, sigmaY: 90),
+                      child: Image.network(
+                        song.coverUrl,
+                        fit: BoxFit.cover,
+                        colorBlendMode: BlendMode.darken,
+                        color: Colors.black.withValues(alpha: 0.5),
                       ),
-                    )
-                        : SongInfo(song: widget.item.data as Song),
-
-                    const SizedBox(height: 16),
-
-                    ProgressBar(
-                      positionStream: _audioService.positionStream,
-                      durationStream: _audioService.durationStream,
-                      accentColor: accent,
-                      onSeek: (d) => _audioService.seek(d),
                     ),
-
-                    const SizedBox(height: 20),
-
-                    StreamBuilder<bool>(
-                      stream: _audioService.playingStream,
-                      initialData: _audioService.isPlaying,
-                      builder: (context, snapshot) {
-                        final isPlaying = snapshot.data ?? false;
-
-                        return PlayerControls(
-                          isPlaying: isPlaying,
-                          onPlayPause: () {
-                            _audioService.togglePlayPause();
-                          },
-                          onNext: () {
-                            _audioService.playNext();
-                          },
-                          onPrevious: () {
-                            _audioService.playPrevious();
-                          },
-                          accentColor: accent,
-                          isPodcast: _isPodcast,
-                        );
-                      },
-                    ),
-
-                    if (!_isPodcast) ...[
-                      const SizedBox(height: 24),
-                      ViewToggle(
-                        showLyrics: _showLyrics,
-                        onToggle: (v) => setState(() => _showLyrics = v),
-                      ),
-                    ],
-
-                    const SizedBox(height: 30),
-                    PlayerActions(accentColor: accent),
-                  ],
+                  ),
                 ),
-              ),
+
+                SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset),
+                    child: Column(
+                      children: [
+                        PlayerTopBar(
+                          liked: isLiked,
+                          onLikeToggle: () =>
+                              context.read<LikeService>().toggleLike(song),
+                          onCollapse: widget.onCollapse,
+                        ),
+
+                        const Spacer(),
+
+                        Expanded(
+                          flex: 5,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 400),
+                            child: _viewMode == PlayerViewMode.lyrics
+                                ? LyricsView(
+                                    artist: song.artist,
+                                    track: song.title,
+                                    positionStream: _audioService.positionStream,
+                                  )
+                                : _viewMode == PlayerViewMode.artist
+                                    ? ArtistView(
+                                        key: const ValueKey('artist_view'),
+                                        song: song,
+                                        onPlaySong: (s) {
+                                          _audioService.playSong(s);
+                                        },
+                                      )
+                                    : AlbumArt(
+                                        key: ValueKey(song.id),
+                                        coverUrl: song.coverUrl,
+                                        rotation: _discAnim,
+                                      ),
+                          ),
+                        ),
+
+                        const Spacer(),
+
+                        SongInfo(song: song),
+                        const SizedBox(height: 16),
+
+                        ViewToggle(
+                          viewMode: _viewMode,
+                          onToggle: (v) => setState(() => _viewMode = v),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        ProgressBar(
+                          positionStream: _audioService.positionStream,
+                          durationStream: _audioService.durationStream,
+                          accentColor: Colors.white,
+                          onSeek: _audioService.seek,
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        StreamBuilder<bool>(
+                          stream: _audioService.playingStream,
+                          initialData: _audioService.isPlaying,
+                          builder: (context, snapshot) {
+                            return PlayerControls(
+                              isPlaying: snapshot.data ?? false,
+                              onPlayPause: _audioService.togglePlayPause,
+                              onNext: _audioService.playNext,
+                              onPrevious: _audioService.playPrevious,
+                              accentColor: Colors.white,
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: 30),
+
+                        PlayerActions(
+                          accentColor: Colors.white,
+                          currentSong: song,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 
+enum PlayerViewMode { song, lyrics, artist }
+
 class ViewToggle extends StatelessWidget {
-  final bool showLyrics;
-  final ValueChanged<bool> onToggle;
+  final PlayerViewMode viewMode;
+  final ValueChanged<PlayerViewMode> onToggle;
 
   const ViewToggle({
     super.key,
-    required this.showLyrics,
+    required this.viewMode,
     required this.onToggle,
   });
 
@@ -16,9 +18,11 @@ class ViewToggle extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _btn('Song', !showLyrics, () => onToggle(false)),
+        _btn('Song', viewMode == PlayerViewMode.song, () => onToggle(PlayerViewMode.song)),
         const SizedBox(width: 12),
-        _btn('Lyrics', showLyrics, () => onToggle(true)),
+        _btn('Lyrics', viewMode == PlayerViewMode.lyrics, () => onToggle(PlayerViewMode.lyrics)),
+        const SizedBox(width: 12),
+        _btn('Artist', viewMode == PlayerViewMode.artist, () => onToggle(PlayerViewMode.artist)),
       ],
     );
   }
@@ -32,8 +36,8 @@ class ViewToggle extends StatelessWidget {
         const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         decoration: BoxDecoration(
           color: active
-              ? kPrimaryColor.withOpacity(0.85)
-              : kSurfaceColor.withOpacity(0.25),
+              ? kPrimaryColor.withValues(alpha :0.85)
+              : kSurfaceColor.withValues(alpha :0.25),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(

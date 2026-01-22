@@ -107,16 +107,16 @@ class _NotificationTile extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: highlight
                     ? [
-                  Colors.white.withOpacity(0.18),
-                  Colors.white.withOpacity(0.06),
+                  Colors.white.withValues(alpha :0.18),
+                  Colors.white.withValues(alpha :0.06),
                 ]
                     : [
-                  Colors.white.withOpacity(0.10),
-                  Colors.white.withOpacity(0.03),
+                  Colors.white.withValues(alpha :0.10),
+                  Colors.white.withValues(alpha :0.03),
                 ],
               ),
               border: Border.all(
-                color: Colors.white.withOpacity(0.18),
+                color: Colors.white.withValues(alpha :0.18),
                 width: 0.8,
               ),
             ),
@@ -142,7 +142,7 @@ class _NotificationTile extends StatelessWidget {
       height: 38,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withValues(alpha :0.15),
       ),
       child: Icon(
         icon,
@@ -168,7 +168,7 @@ class _NotificationTile extends StatelessWidget {
         Text(
           message,
           style: TextStyle(
-            color: Colors.white.withOpacity(0.65),
+            color: Colors.white.withValues(alpha :0.65),
             fontSize: 13,
             height: 1.3,
           ),
@@ -181,7 +181,7 @@ class _NotificationTile extends StatelessWidget {
     return Text(
       time,
       style: TextStyle(
-        color: Colors.white.withOpacity(0.4),
+        color: Colors.white.withValues(alpha :0.4),
         fontSize: 11,
       ),
     );

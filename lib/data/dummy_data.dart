@@ -68,30 +68,34 @@ class DummyData {
   ];
 
   static final List<Playlist> playlists = [
-    Playlist(
-      id: '1',
-      title: 'Top Hits',
-      coverUrl: 'https://picsum.photos/seed/9/300/300',
-      songCount: 50,
-    ),
-    Playlist(
-      id: '2',
-      title: 'Chill Vibes',
-      coverUrl: 'https://picsum.photos/seed/10/300/300',
-      songCount: 35,
-    ),
-    Playlist(
-      id: '3',
-      title: 'Workout',
-      coverUrl: 'https://picsum.photos/seed/11/300/300',
-      songCount: 42,
-    ),
-    Playlist(
-      id: '4',
-      title: 'Party Mix',
-      coverUrl: 'https://picsum.photos/seed/12/300/300',
-      songCount: 60,
-    ),
+    // Playlist(
+    //   id: '1',
+    //   title: 'Top Hits',
+    //   coverUrl: 'https://picsum.photos/seed/9/300/300', songs: [],
+    //
+    // ),
+    // Playlist(
+    //   id: '2',
+    //   title: 'Chill Vibes',
+    //   coverUrl: 'https://picsum.photos/seed/10/300/300', songs: [],
+    //
+    // ),
+    // Playlist(
+    //   id: '3',
+    //   title: 'Workout',
+    //   coverUrl: 'https://picsum.photos/seed/11/300/300', songs: [],
+    //
+    // ),
+    // Playlist(
+    //   id: '4',
+    //   title: 'Party Mix',
+    //   coverUrl: 'https://picsum.photos/seed/12/300/300', songs: [
+    //     trendingSongs[0],
+    //     recommendedSongs[1],
+    //     recentSongs[0],
+    //   ],
+
+    //),
   ];
   static final List<Song> likedSongs = [
     Song(

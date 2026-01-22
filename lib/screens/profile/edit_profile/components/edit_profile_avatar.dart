@@ -15,12 +15,12 @@ class EditProfileAvatar extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: kAccentColor.withOpacity(0.5),
+                color: kAccentColor.withValues(alpha :0.5),
                 width: 2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: kAccentColor.withOpacity(0.25),
+                  color: kAccentColor.withValues(alpha :0.25),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 ),

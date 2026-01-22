@@ -26,7 +26,7 @@ class GenreCarousel extends StatelessWidget {
                     errorBuilder: (_, __, ___) => Container(
                         height: 130, width: 130, color: Colors.grey[900],
                         child: Icon(
-                            Icons.podcasts, color: kPrimaryColor.withOpacity(0.24)
+                            Icons.podcasts, color: kPrimaryColor.withValues(alpha: 0.24)
                         )
                     )
                 )
@@ -45,7 +45,7 @@ class GenreCarousel extends StatelessWidget {
                 child: Text(
                     p.author, overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: kPrimaryColor.withOpacity(0.54), fontSize: 12)
+                        color: kPrimaryColor.withValues(alpha: 0.54), fontSize: 12)
                 )
             ),
           ]);

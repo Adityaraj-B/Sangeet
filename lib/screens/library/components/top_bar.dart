@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sangeet/constants.dart';
-
 import '../../profile/components/notifications.dart';
+import '../../insights/insights_screen.dart';
 
-class TopBar extends StatelessWidget {
+class TopBar extends StatefulWidget {
   final AnimationController animation;
   final VoidCallback? onProfileTap;
   final VoidCallback? onInsightsTap;
@@ -20,144 +22,207 @@ class TopBar extends StatelessWidget {
   });
 
   @override
+  State<TopBar> createState() => _TopBarState();
+}
+
+class _TopBarState extends State<TopBar> {
+  String _userName = 'User';
+  String _userEmail = 'user@email.com';
+  String? _profileImagePath;
+  bool _isPremium = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _userName = prefs.getString('user_name') ?? 'User';
+        _userEmail = prefs.getString('user_email') ?? 'user@email.com';
+        _profileImagePath = prefs.getString('profile_image');
+        _isPremium = prefs.getBool('is_premium') ?? false;
+      });
+    }
+  }
+
+  String _getUsername() {
+    // Extract username from email or use name
+    if (_userEmail.contains('@')) {
+      return _userEmail.split('@')[0];
+    }
+    return _userName.toLowerCase().replaceAll(' ', '');
+  }
+
+  @override
+  void didUpdateWidget(TopBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload data when widget updates (e.g., when returning from edit profile)
+    _loadUserData();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Keep the SizeTransition you had for the entrance animation.
-    // IMPORTANT: To make this TopBar *scrollable / not fixed*, ensure you place it
-    // inside a scrollable parent (for example: a Column inside a SingleChildScrollView
-    // or as a SliverToBoxAdapter inside a CustomScrollView). This widget itself is not
-    // sticky — it will move with the parent scroll.
     return SizeTransition(
-      sizeFactor: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      sizeFactor: CurvedAnimation(parent: widget.animation, curve: Curves.easeOut),
       axisAlignment: -1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12),
         child: Row(
           children: [
-            // PROFILE (tappable)
-            InkWell(
-              onTap: onProfileTap,
-              borderRadius: BorderRadius.circular(10),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      color: kSurfaceColor,
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.person, color: kPrimaryColor),
+            // 1. Profile Picture (Left)
+            GestureDetector(
+              onTap: widget.onProfileTap,
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: _profileImagePath == null
+                      ? LinearGradient(
+                    colors: [
+                      kAccentColor.withValues(alpha :0.8),
+                      kAccentColor.withValues(alpha :0.4),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                      : null,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha :0.2),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: kAccentColor.withValues(alpha :0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                  image: _profileImagePath != null
+                      ? DecorationImage(
+                    image: _profileImagePath!.startsWith('http')
+                        ? NetworkImage(_profileImagePath!)
+                        : FileImage(File(_profileImagePath!)),
+                    fit: BoxFit.cover,
+                  )
+                      : null,
+                ),
+                child: _profileImagePath == null
+                    ? Center(
+                  child: Text(
+                    _userName.isNotEmpty ? _userName[0].toUpperCase() : 'U',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Adityaraj',
-                        style: TextStyle(color: kPrimaryColor, fontSize: 16, fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Premium',
-                        style: TextStyle(color: kPrimaryColor.withOpacity(0.6), fontSize: 12),
-                      ),
-                    ],
-                  )
-                ],
+                )
+                    : null,
               ),
             ),
 
-            const Spacer(),
+            const SizedBox(width: 14),
 
-            // RIGHT SIDE: two action buttons (insights, notifications)
+            Expanded(
+              child: InkWell(
+                onTap: widget.onProfileTap,
+                overlayColor: WidgetStateProperty.all(Colors.transparent),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (_isPremium)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 2.0),
+                        child: Text(
+                          "PREMIUM",
+                          style: TextStyle(
+                            color: kAccentColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                            fontFamily: 'Roboto',
+                          ),
+                        ),
+                      ),
+
+                    // Name
+                    Text(
+                      _userName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+
+                    // Username Handle
+                    Text(
+                      '@${_getUsername()}',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha :0.6),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             Row(
               children: [
-                _ActionSquare(
-                  icon: Icons.insights_rounded,
+                IconButton(
+                  onPressed: widget.onInsightsTap,
+                  icon: const Icon(Icons.bar_chart_rounded, color: Colors.white, size: 28),
                   tooltip: 'Insights',
-                  onTap: onInsightsTap,
                 ),
-                const SizedBox(width: 10),
-                _ActionSquare(
-                  icon: Icons.notifications_none,
-                  tooltip: 'Notifications',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationScreen(),
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Notifications',
+                      onPressed: widget.onNotificationsTap ??
+                              () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const NotificationScreen(),
+                              ),
+                            );
+                          },
+                      icon: const Icon(Icons.notifications, color: Colors.white, size: 28),
+                    ),
+                    if (widget.notificationsCount > 0)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFF0F0F1E), width: 1.5),
+                          ),
+                        ),
                       ),
-                    );
-                  },
-                  badgeCount: notificationsCount,
+                  ],
                 ),
               ],
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Small square action button that matches the app theme (matte, subtle border).
-class _ActionSquare extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  final String? tooltip;
-  final int badgeCount;
-
-  const _ActionSquare({
-    required this.icon,
-    this.onTap,
-    this.tooltip,
-    this.badgeCount = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: kSurfaceColor.withOpacity(0.58),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: kPrimaryColor.withOpacity(0.06)),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(icon, color: kPrimaryColor.withOpacity(0.92), size: 20),
-          if (badgeCount > 0)
-            Positioned(
-              right: 2,
-              top: 2,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: kAccentColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: kPrimaryColor.withOpacity(0.06), width: 0.6),
-                ),
-                child: Text(
-                  badgeCount > 99 ? '99+' : '$badgeCount',
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-
-    if (onTap == null) return child;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Tooltip(message: tooltip ?? '', child: child),
       ),
     );
   }

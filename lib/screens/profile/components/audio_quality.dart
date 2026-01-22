@@ -80,14 +80,14 @@ class _AudioQualityScreenState extends State<AudioQualityScreen> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white.withOpacity(isSelected ? 0.14 : 0.08),
-                    Colors.white.withOpacity(0.03),
+                    Colors.white.withValues(alpha :isSelected ? 0.14 : 0.08),
+                    Colors.white.withValues(alpha :0.03),
                   ],
                 ),
                 border: Border.all(
                   color: isSelected
-                      ? Colors.white.withOpacity(0.4)
-                      : Colors.white.withOpacity(0.18),
+                      ? Colors.white.withValues(alpha :0.4)
+                      : Colors.white.withValues(alpha :0.18),
                 ),
               ),
               child: Row(
@@ -108,7 +108,7 @@ class _AudioQualityScreenState extends State<AudioQualityScreen> {
                         Text(
                           option.description,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
+                            color: Colors.white.withValues(alpha :0.6),
                             fontSize: 13,
                           ),
                         ),
