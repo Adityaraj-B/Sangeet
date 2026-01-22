@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# SECURITY: Firebase configuration files
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# SECURITY: Environment variables and secrets
+.env
+.env.*
+secrets.dart
+*.key
+*.keystore
+*.jks
