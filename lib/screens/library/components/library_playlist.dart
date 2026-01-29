@@ -5,6 +5,7 @@ import 'package:sangeet/constants.dart';
 import '../../../models/song.dart';
 import '../../../services/playlist_provider.dart';
 import '../../playlist/playlist_body.dart';
+import '../../playlist/components/playlist_screen.dart';
 import '../../profile/components/liked_songs.dart';
 
 class LibraryPlaylistsSection extends StatelessWidget {
@@ -53,6 +54,52 @@ class LibraryPlaylistsSection extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  // "See All" Button - Glass Pill Style
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PlaylistsScreen(onPlaySong: onPlaySong),
+                        ),
+                      );
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha :0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha :0.1),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: const [
+                              Text(
+                                'See All',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(Icons.arrow_forward_ios_rounded,
+                                  size: 14, color: Colors.white),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // "Create" Button - Glass Pill Style
                   GestureDetector(
                     onTap: () => _showCreateDialog(context),

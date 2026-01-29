@@ -160,7 +160,7 @@ class _ProfileBodyState extends State<ProfileBody>
 
   Widget _buildHeader() {
     return SliverAppBar(
-      expandedHeight: 300,
+      expandedHeight: 380,
       pinned: true,
       stretch: true,
       backgroundColor: kBackgroundColor,
@@ -263,15 +263,15 @@ class _ProfileBodyState extends State<ProfileBody>
               onTap: _navigateToEditProfile, // Navigate to edit profile
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: _QuickActionButton(
-              icon: Icons.play_arrow_rounded,
-              label: 'Play All',
-              isPrimary: true,
-              onTap: () => HapticFeedback.lightImpact(),
-            ),
-          ),
+          // const SizedBox(width: 14),
+          // Expanded(
+          //   child: _QuickActionButton(
+          //     icon: Icons.play_arrow_rounded,
+          //     label: 'Play All',
+          //     isPrimary: true,
+          //     onTap: () => HapticFeedback.lightImpact(),
+          //   ),
+          // ),
         ],
       ),
     );

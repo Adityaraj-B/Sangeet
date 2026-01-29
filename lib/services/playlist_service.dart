@@ -71,6 +71,15 @@ class PlaylistService {
     });
   }
 
+  /// Updates the entire songs array for a playlist.
+  /// This is used when reordering or bulk removing songs.
+  Future<void> updatePlaylistSongs(String playlistId, List<String> songIds, List<Map<String, dynamic>> songs) async {
+    await _playlistsRef.doc(playlistId).update({
+      'songIds': songIds,
+      'songs': songs,
+    });
+  }
+
   /// Gets a single playlist by ID (one-time fetch).
   Future<DocumentSnapshot<Map<String, dynamic>>> getPlaylist(String playlistId) {
     return _playlistsRef.doc(playlistId).get();

@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sangeet/constants.dart';
+import '../../../services/user_profile_service.dart';
 import '../edit_profile/edit_profile_screen.dart';
 
 class ProfileHeader extends StatefulWidget {
@@ -25,13 +25,15 @@ class _ProfileHeaderState extends State<ProfileHeader> {
   }
 
   Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _userName = prefs.getString('user_name') ?? 'User';
-      _userEmail = prefs.getString('user_email') ?? 'user@email.com';
-      _userBio = prefs.getString('user_bio') ?? 'Music is life 🎵';
-      _profileImagePath = prefs.getString('profile_image');
-    });
+    final profileData = await UserProfileService.loadUserProfile();
+    if (mounted) {
+      setState(() {
+        _userName = profileData.name;
+        _userEmail = profileData.email;
+        _userBio = profileData.bio;
+        _profileImagePath = profileData.photoUrl;
+      });
+    }
   }
 
   Future<void> _navigateToEditProfile() async {
@@ -55,11 +57,7 @@ class _ProfileHeaderState extends State<ProfileHeader> {
   }
 
   String _getUsername() {
-    // Extract username from email or use name
-    if (_userEmail.contains('@')) {
-      return _userEmail.split('@')[0];
-    }
-    return _userName.toLowerCase().replaceAll(' ', '');
+    return UserProfileService.getUsernameFromEmail(_userEmail);
   }
 
   @override

@@ -159,6 +159,15 @@ class QueueService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Set the last played song without starting playback.
+  /// Used to show the last song in mini player when app opens.
+  void setLastPlayedSong(Song song) {
+    if (_currentSong == null) {
+      _currentSong = song;
+      notifyListeners();
+    }
+  }
+
   Future<void> _loadSimilarSongs(Song song) async {
     if (_isLoadingSimilar) {
       print('QueueService._loadSimilarSongs: Already loading, skipping');
@@ -236,6 +245,69 @@ class QueueService extends ChangeNotifier {
       ..clear()
       ..addAll(list);
     notifyListeners();
+  }
+
+  /// Skip to a specific position in the queue and play that song
+  Future<Song?> skipToQueueItem(int index) async {
+    if (index < 0 || index >= _upNext.length) return null;
+
+    final list = _upNext.toList();
+
+    // Add current song to history if it exists
+    if (_currentSong != null) {
+      _addToHistory(_currentSong!);
+    }
+
+    // Get the song at the specified index
+    final targetSong = list[index];
+
+    // Remove all songs before and including the target index
+    final songsToHistory = list.sublist(0, index);
+
+    // Add skipped songs to history (in order)
+    for (final song in songsToHistory) {
+      _addToHistory(song);
+      _manualQueueIds.remove(song.id);
+    }
+
+    // Remove the target song from manual queue tracking
+    _manualQueueIds.remove(targetSong.id);
+
+    // Update the queue to only have songs after the target
+    final remainingQueue = list.sublist(index + 1);
+    _upNext
+      ..clear()
+      ..addAll(remainingQueue);
+
+    // Set the target song as current
+    _currentSong = targetSong;
+
+    // Load more similar songs if queue is getting low
+    if (_upNext.length < 3 && _currentSong != null) {
+      await _loadSimilarSongs(_currentSong!);
+    }
+
+    notifyListeners();
+    return _currentSong;
+  }
+
+  /// Play a song from history
+  Future<Song?> playFromHistory(Song song) async {
+    // Add current song to history if it exists
+    if (_currentSong != null) {
+      _addToHistory(_currentSong!);
+    }
+
+    // Set the selected song as current
+    _currentSong = song;
+
+    // Ensure we have songs in the queue
+    if (_upNext.isEmpty) {
+      await _loadSimilarSongs(song);
+    }
+
+    notifyListeners();
+    return _currentSong;
   }
 
   void reset() {

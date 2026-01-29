@@ -16,6 +16,7 @@ import '../models/song.dart';
 import 'package:sangeet/repositories/search_repo.dart';
 import '../services/audio_player_service.dart';
 import '../services/playlist_provider.dart';
+import '../services/recently_played.dart';
 
 class Body extends StatefulWidget {
   static const routeName = '/body';
@@ -65,6 +66,37 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
 
     // Trigger initial sync
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromQueue());
+
+    // Load last played song to show in bottom player (like Spotify)
+    _loadLastPlayedSong();
+  }
+
+  /// Load the last played song to show in bottom player on app start
+  Future<void> _loadLastPlayedSong() async {
+    // Only load if there's no current song playing
+    if (_audioService.currentSong != null) return;
+
+    try {
+      final recentSongs = await RecentlyPlayedService().getRecentlyPlayed(limit: 1);
+      if (recentSongs.isNotEmpty && mounted) {
+        final lastSong = recentSongs.first;
+        setState(() {
+          _currentItem = PlaybackItem(type: PlaybackType.song, data: lastSong);
+          _showMiniPlayer = true;
+        });
+
+        // Update color async
+        extractDominantColor(lastSong.coverUrl).then((c) {
+          if (!mounted) return;
+          setState(() => _playerColor = c);
+        });
+
+        // Set the song in queue without playing (so it's ready when user taps play)
+        _audioService.queue.setLastPlayedSong(lastSong);
+      }
+    } catch (e) {
+      debugPrint('Body: Error loading last played song: $e');
+    }
   }
 
   void _syncFromQueue() {
@@ -213,6 +245,21 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
       barrierDismissible: true,
       builder: (_) => const _PodcastComingSoonDialog(),
     );
+  }
+
+  /// Public method to play a song and open the full player screen
+  Future<void> playAndOpenPlayerForSong(Song song) async {
+    if (!mounted) return;
+    setState(() {
+      _currentItem = PlaybackItem(type: PlaybackType.song, data: song);
+      _showMiniPlayer = false;
+    });
+    unawaited(extractDominantColor(song.coverUrl).then((c) {
+      if (!mounted) return;
+      setState(() => _playerColor = c);
+    }));
+    unawaited(_audioService.playSong(song));
+    await _pushPlayerRoute();
   }
 
   @override

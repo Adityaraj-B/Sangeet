@@ -49,14 +49,14 @@ InputDecoration inputDecorationBuild(BuildContext context, String hint,
     hintStyle: TextStyle(color: kMutedTextColor, fontSize: getProportionateScreenWidth(14)),
     contentPadding: EdgeInsets.symmetric(vertical: pad, horizontal: getProportionateScreenWidth(14)),
     filled: true,
-    fillColor: Colors.white.withOpacity(0.02),
+    fillColor: Colors.white.withValues(alpha: 0.02),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(getProportionateScreenWidth(12)),
-      borderSide: BorderSide(color: kMutedTextColor.withOpacity(0.24)),
+      borderSide: BorderSide(color: kMutedTextColor.withValues(alpha: 0.24)),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(getProportionateScreenWidth(12)),
-      borderSide: BorderSide(color: kAccentColor.withOpacity(0.9), width: 1.4),
+      borderSide: BorderSide(color: kAccentColor.withValues(alpha: 0.9), width: 1.4),
     ),
   );
 }

@@ -3,6 +3,7 @@ import 'package:sangeet/constants.dart';
 import 'package:sangeet/models/song.dart';
 
 import '../services/queue.dart';
+import '../services/audio_player_service.dart';
 
 class QueueScreen extends StatefulWidget {
   final VoidCallback? onPlaySong;
@@ -15,6 +16,7 @@ class QueueScreen extends StatefulWidget {
 
 class _QueueScreenState extends State<QueueScreen> {
   final QueueService _queueService = QueueService();
+  final AudioPlayerService _audioService = AudioPlayerService();
 
   @override
   Widget build(BuildContext context) {
@@ -279,88 +281,141 @@ class _QueueScreenState extends State<QueueScreen> {
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete, color: Colors.white),
       ),
-      child: ListTile(
-        leading: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.drag_handle,
-              color: Colors.white.withValues(alpha: 0.5),
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                song.coverUrl,
-                width: 45,
-                height: 45,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 45,
-                  height: 45,
-                  color: kSurfaceColor,
-                  child: const Icon(Icons.music_note, color: Colors.white54, size: 20),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () async {
+            // Play the song at this position
+            await _audioService.skipToQueueItem(index);
+            // Optionally close the queue screen after selecting a song
+            // Navigator.of(context).pop();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                // Drag handle with ReorderableDragStartListener
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(
+                      Icons.drag_handle,
+                      color: Colors.white.withValues(alpha: 0.5),
+                      size: 20,
+                    ),
+                  ),
                 ),
-              ),
+                // Album art
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    song.coverUrl,
+                    width: 45,
+                    height: 45,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 45,
+                      height: 45,
+                      color: kSurfaceColor,
+                      child: const Icon(Icons.music_note, color: Colors.white54, size: 20),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Song info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.title,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        song.artist,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        title: Text(
-          song.title,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          song.artist,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );
   }
 
   Widget _buildHistorySongTile(Song song) {
-    return ListTile(
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: Image.network(
-          song.coverUrl,
-          width: 45,
-          height: 45,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            width: 45,
-            height: 45,
-            color: kSurfaceColor,
-            child: const Icon(Icons.music_note, color: Colors.white54, size: 20),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () async {
+          // Play the song from history
+          await _audioService.playFromHistory(song);
+          // Optionally close the queue screen after selecting a song
+          // Navigator.of(context).pop();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  song.coverUrl,
+                  width: 45,
+                  height: 45,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 45,
+                    height: 45,
+                    color: kSurfaceColor,
+                    child: const Icon(Icons.music_note, color: Colors.white54, size: 20),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      song.artist,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.history,
+                color: Colors.white.withValues(alpha: 0.3),
+                size: 20,
+              ),
+            ],
           ),
         ),
-      ),
-      title: Text(
-        song.title,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.7),
-          fontSize: 14,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        song.artist,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.5),
-          fontSize: 12,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Icon(
-        Icons.history,
-        color: Colors.white.withValues(alpha: 0.3),
-        size: 20,
       ),
     );
   }

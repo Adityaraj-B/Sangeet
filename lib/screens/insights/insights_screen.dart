@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +5,8 @@ import '../../constants.dart';
 import '../../models/song.dart';
 import '../../services/recently_played.dart';
 import '../../services/like_service.dart';
+import 'components/components.dart';
+import 'models/insights_models.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key});
@@ -27,13 +28,13 @@ class _InsightsScreenState extends State<InsightsScreen>
   int _totalListeningMinutes = 0;
   int _totalSongsPlayed = 0;
   int _likedSongsCount = 0;
-  List<_ArtistStats> _topArtists = [];
-  List<_GenreStats> _topGenres = [];
+  List<ArtistStats> _topArtists = [];
+  List<GenreStats> _topGenres = [];
   Map<int, int> _listeningByHour = {};
   Map<int, int> _listeningByDay = {};
-  List<Song> _recentSongs = [];
   String _mostActiveDay = '';
   String _peakListeningTime = '';
+  int _currentStreak = 0;
 
   @override
   void initState() {
@@ -67,81 +68,249 @@ class _InsightsScreenState extends State<InsightsScreen>
 
   Future<void> _loadInsightsData() async {
     await _likeService.load();
-    final recentWithTime = await _recentService.getRecentWithTimestamps(limit: 100);
+
+    // RecentlyPlayedService stores unique songs with their latest playedAt.
+    // For more "spot on" insights, we treat each entry as the latest play event
+    // for that song and compute a strict last-7-days window.
+    final recentWithTime =
+        await _recentService.getRecentWithTimestamps(limit: 100);
     final recentSongs = await _recentService.getRecentlyPlayed(limit: 50);
 
-    // Calculate stats
-    final Map<String, int> artistPlayCount = {};
-    final Map<String, String> artistImages = {};
-    final Map<int, int> hourlyListening = {};
-    final Map<int, int> dailyListening = {};
-    int totalMinutes = 0;
+    final now = DateTime.now();
+    final windowStart = now.subtract(const Duration(days: 7));
 
-    for (var item in recentWithTime) {
+    // Filter to last 7 days (inclusive) and drop any malformed timestamps.
+    final filtered = recentWithTime.where((item) {
+      final playedAt = item['playedAt'];
+      if (playedAt is! DateTime) return false;
+      return !playedAt.isBefore(windowStart) && !playedAt.isAfter(now);
+    }).toList();
+
+    // Calculate stats (duration-weighted where applicable)
+    final Map<String, int> artistPlayCount = {}; // play-events (unique songs here)
+    final Map<String, String> artistImages = {};
+    final Map<String, int> artistListeningSeconds = {};
+
+    // Hour/day activity is based on listening *seconds* for better accuracy.
+    final Map<int, int> hourlyListeningSeconds = {};
+    final Map<int, int> dailyListeningSeconds = {};
+
+    final Set<String> uniqueDates = {};
+    final List<DateTime> playDates = [];
+
+    int totalListeningSeconds = 0;
+
+    // Keep a recency map for deterministic tie-breaking (newest wins).
+    final Map<int, DateTime> hourMostRecent = {};
+    final Map<int, DateTime> dayMostRecent = {};
+
+    for (var item in filtered) {
       final song = item['song'] as Song;
       final playedAt = item['playedAt'] as DateTime;
 
-      // Artist stats
+      // Normalize duration: clamp to [0s, 60m] to avoid inflated stats
+      // from bad metadata.
+      final rawSeconds = song.duration.inSeconds;
+      final clampedSeconds = rawSeconds.isFinite
+          ? rawSeconds.clamp(0, 60 * 60)
+          : 0;
+
+      // Track unique dates for averages + streak.
+      uniqueDates.add(_dateKey(playedAt));
+      playDates.add(playedAt);
+
+      // Artist aggregates.
       artistPlayCount[song.artist] = (artistPlayCount[song.artist] ?? 0) + 1;
       artistImages[song.artist] = song.coverUrl;
+      artistListeningSeconds[song.artist] =
+          (artistListeningSeconds[song.artist] ?? 0) + clampedSeconds;
 
-      // Time stats
-      totalMinutes += song.duration.inMinutes;
+      totalListeningSeconds += clampedSeconds;
 
-      // Hourly distribution
-      hourlyListening[playedAt.hour] = (hourlyListening[playedAt.hour] ?? 0) + 1;
+      // Duration-weighted distributions.
+      hourlyListeningSeconds[playedAt.hour] =
+          (hourlyListeningSeconds[playedAt.hour] ?? 0) + clampedSeconds;
+      dailyListeningSeconds[playedAt.weekday] =
+          (dailyListeningSeconds[playedAt.weekday] ?? 0) + clampedSeconds;
 
-      // Daily distribution (1 = Monday, 7 = Sunday)
-      dailyListening[playedAt.weekday] = (dailyListening[playedAt.weekday] ?? 0) + 1;
+      // Tie-breaker helpers (most recent).
+      final existingHour = hourMostRecent[playedAt.hour];
+      if (existingHour == null || playedAt.isAfter(existingHour)) {
+        hourMostRecent[playedAt.hour] = playedAt;
+      }
+      final existingDay = dayMostRecent[playedAt.weekday];
+      if (existingDay == null || playedAt.isAfter(existingDay)) {
+        dayMostRecent[playedAt.weekday] = playedAt;
+      }
     }
 
-    // Sort artists by play count
-    final sortedArtists = artistPlayCount.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    // Sort artists by total listening time, then by play count, then by name.
+    final sortedArtists = artistPlayCount.keys.toList()
+      ..sort((a, b) {
+        final secCompare =
+            (artistListeningSeconds[b] ?? 0).compareTo(artistListeningSeconds[a] ?? 0);
+        if (secCompare != 0) return secCompare;
 
-    // Generate genre stats (simulated based on variety)
-    final genres = _generateGenreStats(recentSongs);
+        final countCompare =
+            (artistPlayCount[b] ?? 0).compareTo(artistPlayCount[a] ?? 0);
+        if (countCompare != 0) return countCompare;
 
-    // Find peak listening time
-    int peakHour = 0;
-    int peakCount = 0;
-    hourlyListening.forEach((hour, count) {
-      if (count > peakCount) {
-        peakCount = count;
-        peakHour = hour;
-      }
-    });
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
 
-    // Find most active day
-    int activeDay = 1;
-    int activeDayCount = 0;
-    dailyListening.forEach((day, count) {
-      if (count > activeDayCount) {
-        activeDayCount = count;
-        activeDay = day;
-      }
-    });
+    // Generate genre stats based on (filtered) songs and listening patterns.
+    // Keep existing heuristic, but feed it the same window for consistency.
+    final genres = _generateGenreStats(recentSongs, artistPlayCount);
 
-    final dayNames = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    // Peak listening hour: max seconds, tiebreak by most recent play.
+    final peakHour = _maxKeyBy(
+      hourlyListeningSeconds,
+      tieBreakerMostRecent: hourMostRecent,
+    );
+
+    // Most active day: max seconds, tiebreak by most recent play.
+    final activeDay = _maxKeyBy(
+      dailyListeningSeconds,
+      tieBreakerMostRecent: dayMostRecent,
+      defaultKey: 1,
+    );
+
+    // Calculate listening streak from normalized unique days in the window.
+    final streak = _calculateListeningStreak(playDates);
+
+    // Average per day is computed from the same 7-day window.
+    final avgPerDay = uniqueDates.isNotEmpty ? filtered.length / uniqueDates.length : 0.0;
+    (avgPerDay); // keep for potential future UI; intentionally unused now.
+
+    final dayNames = [
+      '',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
 
     if (mounted) {
       setState(() {
-        _totalListeningMinutes = totalMinutes;
-        _totalSongsPlayed = recentWithTime.length;
+        // Use floor minutes to avoid inflating totals (more "spot on").
+        _totalListeningMinutes = (totalListeningSeconds ~/ 60);
+
+        // Note: due to de-duping in storage this represents unique songs
+        // played in the last 7 days.
+        _totalSongsPlayed = filtered.length;
         _likedSongsCount = _likeService.likedSongs.length;
-        _topArtists = sortedArtists.take(5).map((e) => _ArtistStats(
-          name: e.key,
-          playCount: e.value,
-          imageUrl: artistImages[e.key] ?? '',
-        )).toList();
+
+        _topArtists = sortedArtists.take(5).map((name) {
+          final seconds = artistListeningSeconds[name] ?? 0;
+          return ArtistStats(
+            name: name,
+            playCount: artistPlayCount[name] ?? 0,
+            imageUrl: artistImages[name] ?? '',
+            totalMinutes: seconds ~/ 60,
+          );
+        }).toList();
+
         _topGenres = genres;
-        _listeningByHour = hourlyListening;
-        _listeningByDay = dailyListening;
-        _recentSongs = recentSongs;
-        _mostActiveDay = dayNames[activeDay];
-        _peakListeningTime = _formatHour(peakHour);
+
+        // Convert seconds distributions back to an int scale for the existing chart.
+        // We store minutes here to keep values smaller and more stable.
+        _listeningByHour = hourlyListeningSeconds
+            .map((k, v) => MapEntry(k, (v / 60).round()));
+        _listeningByDay = dailyListeningSeconds
+            .map((k, v) => MapEntry(k, (v / 60).round()));
+
+        _mostActiveDay = dayNames[(activeDay ?? 1).clamp(1, 7)];
+        _peakListeningTime = _formatHour(peakHour ?? 0);
+        _currentStreak = streak;
       });
     }
+  }
+
+  String _dateKey(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Returns the key with the maximum value. If tied, prefers the most recent
+  /// timestamp in [tieBreakerMostRecent].
+  int? _maxKeyBy(
+    Map<int, int> values, {
+    Map<int, DateTime>? tieBreakerMostRecent,
+    int? defaultKey,
+  }) {
+    if (values.isEmpty) return defaultKey;
+
+    int? bestKey;
+    int bestValue = -1;
+    DateTime bestRecent = DateTime.fromMillisecondsSinceEpoch(0);
+
+    for (final entry in values.entries) {
+      final key = entry.key;
+      final value = entry.value;
+
+      if (value > bestValue) {
+        bestKey = key;
+        bestValue = value;
+        bestRecent = tieBreakerMostRecent?[key] ?? bestRecent;
+        continue;
+      }
+
+      if (value == bestValue && bestKey != null) {
+        final candidateRecent = tieBreakerMostRecent?[key];
+        final currentRecent = tieBreakerMostRecent?[bestKey];
+
+        // Prefer the one with the more recent play within the window.
+        if (candidateRecent != null &&
+            (currentRecent == null || candidateRecent.isAfter(currentRecent))) {
+          bestKey = key;
+          bestRecent = candidateRecent;
+        }
+      }
+    }
+
+    return bestKey;
+  }
+
+  /// Calculate consecutive days listening streak
+  int _calculateListeningStreak(List<DateTime> playDates) {
+    if (playDates.isEmpty) return 0;
+
+    // Use normalized dates (at midnight) to avoid timezone/clock-time issues.
+    final normalized = playDates
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+
+    if (normalized.isEmpty) return 0;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    // If most recent play isn't today or yesterday, streak is broken.
+    if (normalized.first != today && normalized.first != yesterday) {
+      return 0;
+    }
+
+    int streak = 1;
+    DateTime currentDate = normalized.first;
+
+    for (int i = 1; i < normalized.length; i++) {
+      final prevDate = normalized[i];
+      final difference = currentDate.difference(prevDate).inDays;
+
+      if (difference == 1) {
+        streak++;
+        currentDate = prevDate;
+      } else if (difference > 1) {
+        break;
+      }
+    }
+
+    return streak;
   }
 
   String _formatHour(int hour) {
@@ -151,16 +320,110 @@ class _InsightsScreenState extends State<InsightsScreen>
     return '${hour - 12} PM';
   }
 
-  List<_GenreStats> _generateGenreStats(List<Song> songs) {
-    // Simulated genre distribution based on listening patterns
-    final genres = [
-      _GenreStats(name: 'Pop', percentage: 35, color: const Color(0xFFFF6B8A)),
-      _GenreStats(name: 'Hip-Hop', percentage: 25, color: const Color(0xFF6B8AFF)),
-      _GenreStats(name: 'R&B', percentage: 20, color: const Color(0xFF8AFF6B)),
-      _GenreStats(name: 'Electronic', percentage: 12, color: const Color(0xFFFFB86B)),
-      _GenreStats(name: 'Rock', percentage: 8, color: const Color(0xFFB86BFF)),
-    ];
-    return genres;
+  List<GenreStats> _generateGenreStats(List<Song> songs, Map<String, int> artistPlayCount) {
+    // Genre inference based on artist names and listening patterns
+    // This provides a more realistic distribution based on actual data
+
+    if (songs.isEmpty || artistPlayCount.isEmpty) {
+      return [
+        GenreStats(name: 'No Data', percentage: 100, color: Colors.grey),
+      ];
+    }
+
+    // Common genre keywords that might appear in artist names or can be inferred
+    final Map<String, int> genreCounts = {};
+    final genreColors = {
+      'Pop': const Color(0xFFFF6B8A),
+      'Hip-Hop': const Color(0xFF6B8AFF),
+      'R&B': const Color(0xFF8AFF6B),
+      'Electronic': const Color(0xFFFFB86B),
+      'Rock': const Color(0xFFB86BFF),
+      'Indie': const Color(0xFF6BFFFF),
+      'Classical': const Color(0xFFFF6BFF),
+      'Jazz': const Color(0xFFFFFF6B),
+      'Other': const Color(0xFF9E9E9E),
+    };
+
+    // Analyze each song/artist to infer genre
+    int totalPlays = 0;
+    for (var entry in artistPlayCount.entries) {
+      final artist = entry.key.toLowerCase();
+      final plays = entry.value;
+      totalPlays += plays;
+
+      // Simple genre inference based on patterns
+      // In a real app, this would use actual genre metadata
+      String inferredGenre = 'Other';
+
+      // Check for common genre indicators in artist name
+      if (artist.contains('dj') || artist.contains('electronic') ||
+          artist.contains('edm') || artist.contains('remix')) {
+        inferredGenre = 'Electronic';
+      } else if (artist.contains('rap') || artist.contains('hip') ||
+                 artist.contains('hop') || artist.contains('lil ')) {
+        inferredGenre = 'Hip-Hop';
+      } else if (artist.contains('rock') || artist.contains('metal') ||
+                 artist.contains('punk')) {
+        inferredGenre = 'Rock';
+      } else if (artist.contains('jazz') || artist.contains('blues')) {
+        inferredGenre = 'Jazz';
+      } else if (artist.contains('classical') || artist.contains('orchestra') ||
+                 artist.contains('symphony')) {
+        inferredGenre = 'Classical';
+      } else if (artist.contains('indie') || artist.contains('alternative')) {
+        inferredGenre = 'Indie';
+      } else if (artist.contains('r&b') || artist.contains('soul') ||
+                 artist.contains('rnb')) {
+        inferredGenre = 'R&B';
+      } else {
+        // Default distribution based on listening diversity
+        // Spread across popular genres weighted by artist variety
+        final artistCount = artistPlayCount.keys.length;
+        if (artistCount > 5) {
+          inferredGenre = 'Pop'; // Diverse listening often includes pop
+        } else if (artistCount > 2) {
+          inferredGenre = 'Pop';
+        } else {
+          inferredGenre = 'Other';
+        }
+      }
+
+      genreCounts[inferredGenre] = (genreCounts[inferredGenre] ?? 0) + plays;
+    }
+
+    // Convert counts to percentages and sort
+    final List<GenreStats> genres = [];
+    for (var entry in genreCounts.entries) {
+      final percentage = totalPlays > 0
+          ? ((entry.value / totalPlays) * 100).round()
+          : 0;
+      if (percentage > 0) {
+        genres.add(GenreStats(
+          name: entry.key,
+          percentage: percentage,
+          color: genreColors[entry.key] ?? Colors.grey,
+        ));
+      }
+    }
+
+    // Sort by percentage descending
+    genres.sort((a, b) => b.percentage.compareTo(a.percentage));
+
+    // Ensure percentages sum to 100 (adjust largest if needed)
+    if (genres.isNotEmpty) {
+      final sum = genres.fold(0, (sum, g) => sum + g.percentage);
+      if (sum != 100 && sum > 0) {
+        final diff = 100 - sum;
+        genres[0] = GenreStats(
+          name: genres[0].name,
+          percentage: genres[0].percentage + diff,
+          color: genres[0].color,
+        );
+      }
+    }
+
+    // Return top 5 genres
+    return genres.take(5).toList();
   }
 
   @override
@@ -212,7 +475,7 @@ class _InsightsScreenState extends State<InsightsScreen>
           StretchMode.zoomBackground,
           StretchMode.blurBackground,
         ],
-        background: _InsightsHeader(
+        background: InsightsHeader(
           totalMinutes: _totalListeningMinutes,
           totalSongs: _totalSongsPlayed,
           likedSongs: _likedSongsCount,
@@ -320,7 +583,7 @@ class _InsightsScreenState extends State<InsightsScreen>
       child: Row(
         children: [
           Expanded(
-            child: _StatCard(
+            child: StatCard(
               icon: Icons.access_time_rounded,
               value: _formatListeningTime(_totalListeningMinutes),
               label: 'Listening Time',
@@ -329,7 +592,7 @@ class _InsightsScreenState extends State<InsightsScreen>
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: _StatCard(
+            child: StatCard(
               icon: Icons.music_note_rounded,
               value: '$_totalSongsPlayed',
               label: 'Songs Played',
@@ -338,7 +601,7 @@ class _InsightsScreenState extends State<InsightsScreen>
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: _StatCard(
+            child: StatCard(
               icon: Icons.favorite_rounded,
               value: '$_likedSongsCount',
               label: 'Liked Songs',
@@ -362,7 +625,7 @@ class _InsightsScreenState extends State<InsightsScreen>
   Widget _buildListeningChart() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: _GlassCard(
+      child: GlassCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -399,7 +662,7 @@ class _InsightsScreenState extends State<InsightsScreen>
             ),
             SizedBox(
               height: 120,
-              child: _HourlyChart(data: _listeningByHour),
+              child: HourlyChart(data: _listeningByHour),
             ),
             const SizedBox(height: 16),
           ],
@@ -412,7 +675,7 @@ class _InsightsScreenState extends State<InsightsScreen>
     if (_topArtists.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: _GlassCard(
+        child: GlassCard(
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Center(
@@ -441,7 +704,7 @@ class _InsightsScreenState extends State<InsightsScreen>
         itemCount: _topArtists.length,
         itemBuilder: (context, index) {
           final artist = _topArtists[index];
-          return _TopArtistCard(
+          return TopArtistCard(
             artist: artist,
             rank: index + 1,
           );
@@ -453,13 +716,13 @@ class _InsightsScreenState extends State<InsightsScreen>
   Widget _buildGenreDistribution() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: _GlassCard(
+      child: GlassCard(
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
               // Genre bars
-              ..._topGenres.map((genre) => _GenreBar(genre: genre)),
+              ..._topGenres.map((genre) => GenreBar(genre: genre)),
             ],
           ),
         ),
@@ -475,7 +738,7 @@ class _InsightsScreenState extends State<InsightsScreen>
           Row(
             children: [
               Expanded(
-                child: _InsightCard(
+                child: InsightCard(
                   icon: Icons.wb_sunny_rounded,
                   title: 'Peak Time',
                   value: _peakListeningTime.isNotEmpty ? _peakListeningTime : 'N/A',
@@ -485,7 +748,7 @@ class _InsightsScreenState extends State<InsightsScreen>
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _InsightCard(
+                child: InsightCard(
                   icon: Icons.calendar_today_rounded,
                   title: 'Best Day',
                   value: _mostActiveDay.isNotEmpty ? _mostActiveDay : 'N/A',
@@ -496,7 +759,7 @@ class _InsightsScreenState extends State<InsightsScreen>
             ],
           ),
           const SizedBox(height: 12),
-          _InsightCard(
+          InsightCard(
             icon: Icons.auto_graph_rounded,
             title: 'Listening Streak',
             value: '${_calculateStreak()} days',
@@ -510,8 +773,8 @@ class _InsightsScreenState extends State<InsightsScreen>
   }
 
   int _calculateStreak() {
-    // Simplified streak calculation
-    return min(7, _totalSongsPlayed ~/ 5 + 1);
+    // Return the accurately calculated streak from _loadInsightsData
+    return _currentStreak;
   }
 
   Widget _buildWeeklyActivity() {
@@ -520,7 +783,7 @@ class _InsightsScreenState extends State<InsightsScreen>
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: _GlassCard(
+      child: GlassCard(
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Row(
@@ -530,7 +793,7 @@ class _InsightsScreenState extends State<InsightsScreen>
               final count = _listeningByDay[dayIndex] ?? 0;
               final intensity = maxCount > 0 ? count / maxCount : 0.0;
 
-              return _WeekdayBar(
+              return WeekdayBar(
                 day: days[index],
                 intensity: intensity,
                 count: count,
@@ -541,802 +804,5 @@ class _InsightsScreenState extends State<InsightsScreen>
       ),
     );
   }
-}
-
-// Header Widget
-class _InsightsHeader extends StatelessWidget {
-  final int totalMinutes;
-  final int totalSongs;
-  final int likedSongs;
-  final AnimationController pulseAnimation;
-
-  const _InsightsHeader({
-    required this.totalMinutes,
-    required this.totalSongs,
-    required this.likedSongs,
-    required this.pulseAnimation,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Animated gradient background
-        AnimatedBuilder(
-          animation: pulseAnimation,
-          builder: (context, child) {
-            return Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color.lerp(
-                      const Color(0xFF6B8AFF),
-                      const Color(0xFF8A6BFF),
-                      pulseAnimation.value,
-                    )!.withValues(alpha: 0.8),
-                    Color.lerp(
-                      const Color(0xFFFF6B8A),
-                      const Color(0xFFFFB86B),
-                      pulseAnimation.value,
-                    )!.withValues(alpha: 0.6),
-                    kBackgroundColor,
-                  ],
-                  stops: const [0.0, 0.5, 1.0],
-                ),
-              ),
-            );
-          },
-        ),
-
-        // Liquid glass orbs
-        AnimatedBuilder(
-          animation: pulseAnimation,
-          builder: (context, child) {
-            return Stack(
-              children: [
-                Positioned(
-                  top: -60 + (pulseAnimation.value * 20),
-                  right: -40,
-                  child: _GlassOrb(
-                    size: 200,
-                    color: const Color(0xFF6B8AFF).withValues(alpha: 0.3),
-                  ),
-                ),
-                Positioned(
-                  top: 100 - (pulseAnimation.value * 15),
-                  left: -60,
-                  child: _GlassOrb(
-                    size: 150,
-                    color: const Color(0xFFFF6B8A).withValues(alpha: 0.2),
-                  ),
-                ),
-                Positioned(
-                  bottom: 40 + (pulseAnimation.value * 10),
-                  right: 40,
-                  child: _GlassOrb(
-                    size: 80,
-                    color: kAccentColor.withValues(alpha: 0.25),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-
-        // Blur overlay
-        Positioned.fill(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-            child: Container(color: Colors.transparent),
-          ),
-        ),
-
-        // Gradient overlay
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  kBackgroundColor.withValues(alpha: 0.5),
-                  kBackgroundColor,
-                ],
-                stops: const [0.3, 0.7, 1.0],
-              ),
-            ),
-          ),
-        ),
-
-        // Content
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 40),
-                // Icon
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.2),
-                        Colors.white.withValues(alpha: 0.05),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.insights_rounded,
-                    size: 40,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Your Insights',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Discover your listening habits',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// Glass Orb Widget
-class _GlassOrb extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _GlassOrb({
-    required this.size,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            color,
-            color.withValues(alpha: 0.5),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 0.5, 1.0],
-        ),
-      ),
-    );
-  }
-}
-
-// Glass Card Widget
-class _GlassCard extends StatelessWidget {
-  final Widget child;
-
-  const _GlassCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
-            ),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-// Stat Card Widget
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
-
-  const _StatCard({
-    required this.icon,
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08),
-            ),
-          ),
-          child: Column(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 20),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Top Artist Card
-class _TopArtistCard extends StatelessWidget {
-  final _ArtistStats artist;
-  final int rank;
-
-  const _TopArtistCard({
-    required this.artist,
-    required this.rank,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final rankColors = [
-      kAccentColor,
-      const Color(0xFFC0C0C0),
-      const Color(0xFFCD7F32),
-      Colors.white.withValues(alpha: 0.5),
-      Colors.white.withValues(alpha: 0.5),
-    ];
-
-    return Container(
-      width: 100,
-      margin: const EdgeInsets.only(right: 12),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: rankColors[rank - 1],
-                          width: 2,
-                        ),
-                        image: artist.imageUrl.isNotEmpty
-                            ? DecorationImage(
-                                image: NetworkImage(artist.imageUrl),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
-                      ),
-                      child: artist.imageUrl.isEmpty
-                          ? Center(
-                              child: Text(
-                                artist.name[0].toUpperCase(),
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            )
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: rankColors[rank - 1],
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: kBackgroundColor,
-                            width: 2,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '$rank',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: rank <= 3 ? kBackgroundColor : Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  artist.name,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${artist.playCount} plays',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Genre Bar
-class _GenreBar extends StatelessWidget {
-  final _GenreStats genre;
-
-  const _GenreBar({required this.genre});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                genre.name,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                '${genre.percentage}%',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: genre.color,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Stack(
-            children: [
-              Container(
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              FractionallySizedBox(
-                widthFactor: genre.percentage / 100,
-                child: Container(
-                  height: 6,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        genre.color,
-                        genre.color.withValues(alpha: 0.6),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: genre.color.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Insight Card
-class _InsightCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final String subtitle;
-  final List<Color> gradient;
-  final bool isWide;
-
-  const _InsightCard({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.subtitle,
-    required this.gradient,
-    this.isWide = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: EdgeInsets.all(isWide ? 20 : 16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                gradient[0].withValues(alpha: 0.2),
-                gradient[1].withValues(alpha: 0.1),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: gradient[0].withValues(alpha: 0.3),
-            ),
-          ),
-          child: isWide
-              ? Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: gradient[0].withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(icon, color: gradient[0], size: 24),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            value,
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                              color: gradient[0],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(icon, color: gradient[0], size: 18),
-                        const SizedBox(width: 8),
-                        Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.6),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      value,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: gradient[0],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                ),
-        ),
-      ),
-    );
-  }
-}
-
-// Hourly Chart
-class _HourlyChart extends StatelessWidget {
-  final Map<int, int> data;
-
-  const _HourlyChart({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    final maxCount = data.values.fold(1, (a, b) => a > b ? a : b);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: List.generate(24, (hour) {
-          final count = data[hour] ?? 0;
-          final height = maxCount > 0 ? (count / maxCount) * 80 + 10 : 10.0;
-          final isActive = count > 0;
-
-          // Only show labels for key hours
-          final showLabel = hour % 6 == 0;
-
-          return Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  height: height,
-                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                  decoration: BoxDecoration(
-                    gradient: isActive
-                        ? LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              kAccentColor.withValues(alpha: 0.3),
-                              kAccentColor,
-                            ],
-                          )
-                        : null,
-                    color: isActive ? null : Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                if (showLabel) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _formatChartHour(hour),
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.white.withValues(alpha: 0.4),
-                    ),
-                  ),
-                ] else
-                  const SizedBox(height: 20),
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  String _formatChartHour(int hour) {
-    if (hour == 0) return '12a';
-    if (hour == 6) return '6a';
-    if (hour == 12) return '12p';
-    if (hour == 18) return '6p';
-    return '';
-  }
-}
-
-// Weekday Bar
-class _WeekdayBar extends StatelessWidget {
-  final String day;
-  final double intensity;
-  final int count;
-
-  const _WeekdayBar({
-    required this.day,
-    required this.intensity,
-    required this.count,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          count > 0 ? '$count' : '-',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.6),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: 32,
-          height: 60,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              width: 32,
-              height: 60 * intensity,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    kAccentColor.withValues(alpha: 0.4),
-                    kAccentColor,
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: intensity > 0
-                    ? [
-                        BoxShadow(
-                          color: kAccentColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          day,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: intensity > 0.5
-                ? kAccentColor
-                : Colors.white.withValues(alpha: 0.5),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// Data Models
-class _ArtistStats {
-  final String name;
-  final int playCount;
-  final String imageUrl;
-
-  _ArtistStats({
-    required this.name,
-    required this.playCount,
-    required this.imageUrl,
-  });
-}
-
-class _GenreStats {
-  final String name;
-  final int percentage;
-  final Color color;
-
-  _GenreStats({
-    required this.name,
-    required this.percentage,
-    required this.color,
-  });
 }
 

@@ -55,6 +55,7 @@ secrets.dart
 *.key
 *.keystore
 *.jks
+key.properties
 
 # Documentation and Security Reports
 BIOMETRIC_AUTH_GUIDE.md
@@ -64,3 +65,10 @@ NOTIFICATION_TROUBLESHOOTING.md
 RELEASE_SIGNING_SETUP.md
 SECURITY_AUDIT_REPORT.md
 URGENT_SECURITY_ACTIONS.md
+
+# Local environment and SDK files (should not be committed)
+local.properties
+
+# Generated Firebase config (contains API keys/IDs)
+# If you prefer to keep this file in source control, ensure keys are not sensitive and consider using environment-based configuration instead.
+lib/firebase_options.dart

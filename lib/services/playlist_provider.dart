@@ -158,7 +158,17 @@ class PlaylistProvider extends ChangeNotifier {
 
   Future<void> updatePlaylist(Playlist updatedPlaylist) async {
     try {
+      // Update the title
       await _service.renamePlaylist(updatedPlaylist.id, updatedPlaylist.title);
+
+      // Update the songs list
+      final songIds = updatedPlaylist.songs.map((s) => s.id).toList();
+      final songsData = updatedPlaylist.songs.map((s) => s.toJson()).toList();
+      await _service.updatePlaylistSongs(updatedPlaylist.id, songIds, songsData);
+
+      // Update the cache
+      _playlistSongsCache[updatedPlaylist.id] = List.from(updatedPlaylist.songs);
+
       // No need to update local state - Firestore stream will notify
     } catch (e) {
       if (kDebugMode) {
