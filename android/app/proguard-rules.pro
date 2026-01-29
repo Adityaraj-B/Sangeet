@@ -6,6 +6,10 @@
 -keep class io.flutter.**  { *; }
 -keep class io.flutter.plugins.**  { *; }
 
+# Audio Service
+-keep class com.ryanheise.audioservice.** { *; }
+-dontwarn com.ryanheise.audioservice.**
+
 # Firebase
 -keepattributes Signature
 -keepattributes *Annotation*

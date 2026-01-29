@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sangeet/constants.dart';
+import '../../../services/user_profile_service.dart';
 import '../../podcast/components/section_title.dart';
 import 'components/glass_field.dart';
 import 'components/glass_tile.dart';
@@ -61,13 +62,16 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   }
 
   Future<void> _loadPreferences() async {
+    final profileData = await UserProfileService.loadUserProfile();
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _bioCtrl.text = prefs.getString('user_bio') ?? 'Music is life 🎵';
-      _isPublicProfile = prefs.getBool('is_public_profile') ?? true;
-      _showActivity = prefs.getBool('show_activity') ?? true;
-      _allowCollaboration = prefs.getBool('allow_collaboration') ?? false;
-    });
+    if (mounted) {
+      setState(() {
+        _bioCtrl.text = profileData.bio;
+        _isPublicProfile = prefs.getBool('is_public_profile') ?? true;
+        _showActivity = prefs.getBool('show_activity') ?? true;
+        _allowCollaboration = prefs.getBool('allow_collaboration') ?? false;
+      });
+    }
   }
 
   @override
@@ -110,18 +114,20 @@ class _EditProfileScreenState extends State<EditProfileScreen>
 
     await Future.delayed(const Duration(milliseconds: 800));
 
-    // Save to SharedPreferences
+    // Save using UserProfileService (handles both SecureStorage and SharedPreferences)
+    await UserProfileService.updateUserProfile(
+      name: _nameCtrl.text.trim(),
+      email: _emailCtrl.text.trim(),
+      photoUrl: _profileImagePath,
+      bio: _bioCtrl.text.trim(),
+    );
+
+    // Save privacy preferences to SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_name', _nameCtrl.text.trim());
-    await prefs.setString('user_email', _emailCtrl.text.trim());
-    await prefs.setString('user_bio', _bioCtrl.text.trim());
     await prefs.setBool('is_public_profile', _isPublicProfile);
     await prefs.setBool('show_activity', _showActivity);
     await prefs.setBool('allow_collaboration', _allowCollaboration);
 
-    if (_profileImagePath != null) {
-      await prefs.setString('profile_image', _profileImagePath!);
-    }
 
     if (mounted) {
       _saveAnimController.reverse();

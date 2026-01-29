@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../components/queue_screen.dart';
+import '../../../components/device_selector_sheet.dart';
 import '../../../models/song.dart';
 import '../../../services/audio_player_service.dart';
 import '../../playlist/components/add_to_playlist.dart';
@@ -37,13 +38,10 @@ class PlayerActions extends StatelessWidget {
               : null,
         ),
         _Action(
-          icon: Icons.share,
-          label: 'Share',
+          icon: Icons.speaker_group_rounded,
+          label: 'Devices',
           onTap: () {
-            // TODO: Implement share functionality
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Share functionality coming soon')),
-            );
+            DeviceSelectorSheet.show(context);
           },
         ),
         // In player_actions.dart:

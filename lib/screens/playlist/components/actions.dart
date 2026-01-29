@@ -2,14 +2,90 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sangeet/constants.dart';
 import 'package:sangeet/screens/playlist/components/playlist_edit.dart';
+import 'package:sangeet/screens/playlist/components/add_songs_dialog.dart';
+import 'package:sangeet/screens/body.dart';
 import '../../../models/playlist.dart';
 import '../../../models/song.dart';
 import '../../../services/playlist_provider.dart';
+import '../../../services/audio_player_service.dart';
+import '../../../services/queue.dart';
+import '../../../services/like_service.dart';
+import 'dart:math';
 
 class PlaylistActions extends StatelessWidget {
   final Playlist playlist;
 
   const PlaylistActions({super.key, required this.playlist});
+
+  Future<void> _shufflePlaylist(BuildContext context) async {
+    final playlistSongs = context.read<PlaylistProvider>().getPlaylistSongs(playlist.id);
+
+    if (playlistSongs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No songs to shuffle')),
+      );
+      return;
+    }
+
+    final audioService = AudioPlayerService();
+    final queueService = QueueService();
+
+    // Shuffle the songs
+    final shuffledSongs = List<Song>.from(playlistSongs)..shuffle(Random());
+
+    // Play the first song
+    await audioService.playSong(shuffledSongs.first);
+
+    // Add the rest to queue
+    if (shuffledSongs.length > 1) {
+      queueService.addAllToQueue(shuffledSongs.sublist(1));
+    }
+
+    // Open the player screen
+    BodyState.instance?.openPlayerForCurrentSong();
+  }
+
+  Future<void> _playAllSongs(BuildContext context) async {
+    final playlistSongs = context.read<PlaylistProvider>().getPlaylistSongs(playlist.id);
+
+    if (playlistSongs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No songs to play')),
+      );
+      return;
+    }
+
+    final audioService = AudioPlayerService();
+    final queueService = QueueService();
+
+    // Play the first song
+    await audioService.playSong(playlistSongs.first);
+
+    // Add the rest to queue
+    if (playlistSongs.length > 1) {
+      queueService.addAllToQueue(playlistSongs.sublist(1));
+    }
+
+    // Open the player screen
+    BodyState.instance?.openPlayerForCurrentSong();
+  }
+
+  Future<void> _showAddSongsDialog(BuildContext context) async {
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(
+            value: context.read<PlaylistProvider>(),
+          ),
+          ChangeNotifierProvider.value(
+            value: context.read<LikeService>(),
+          ),
+        ],
+        child: AddSongsDialog(playlist: playlist),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,8 +100,6 @@ class PlaylistActions extends StatelessWidget {
             Row(
               children: [
                 // EDIT BUTTON
-                // Inside PlaylistActions...
-
                 _ActionIcon(
                     icon: Icons.edit_outlined,
                     onTap: () async {
@@ -54,10 +128,6 @@ class PlaylistActions extends StatelessWidget {
                       }
                     }
                 ),
-                const SizedBox(width: 8),
-                _ActionIcon(icon: Icons.download_outlined, onTap: () {}),
-                const SizedBox(width: 8),
-                _ActionIcon(icon: Icons.share_outlined, onTap: () {}),
                 const SizedBox(width: 8),
 
                 // MORE MENU (Delete/Hide)
@@ -104,18 +174,18 @@ class PlaylistActions extends StatelessWidget {
               ],
             ),
 
-            // PLAY BUTTON
+            // PLAY AND SHUFFLE BUTTONS
             Row(
               children: [
                 IconButton(
                   icon: const Icon(Icons.shuffle),
                   color: Colors.white,
                   iconSize: 28,
-                  onPressed: () {},
+                  onPressed: () => _shufflePlaylist(context),
                 ),
                 const SizedBox(width: 8),
                 FloatingActionButton(
-                  onPressed: () {},
+                  onPressed: () => _playAllSongs(context),
                   backgroundColor: primaryActionColor,
                   elevation: 0,
                   mini: false,
@@ -131,7 +201,7 @@ class PlaylistActions extends StatelessWidget {
 
         // ADD SONGS BUTTON
         InkWell(
-          onTap: () {},
+          onTap: () => _showAddSongsDialog(context),
           borderRadius: BorderRadius.circular(4),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),

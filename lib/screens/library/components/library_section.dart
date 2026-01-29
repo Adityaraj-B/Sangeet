@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../models/song.dart';
 import '../../../services/recently_played.dart';
+import '../../home/components/old components/section_header.dart';
 
 class RecentlyPlayedSection extends StatefulWidget {
   final void Function(Song) onPlaySong;
@@ -40,30 +41,9 @@ class _RecentlyPlayedSectionState extends State<RecentlyPlayedSection> {
         // Header
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Recently Played',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (widget.onSeeAll != null)
-                TextButton(
-                  onPressed: widget.onSeeAll,
-                  child: const Text(
-                    'See All',
-                    style: TextStyle(
-                      color: Color(0xFF00A8E1),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-            ],
+          child: SectionHeader(
+            title: 'Recently Played',
+            onSeeAll: widget.onSeeAll,
           ),
         ),
         const SizedBox(height: 16),
@@ -151,26 +131,26 @@ class _RecentlyPlayedSectionState extends State<RecentlyPlayedSection> {
                   // Image
                   song.coverUrl.isNotEmpty
                       ? Image.network(
-                    song.coverUrl,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        color: Colors.grey[900],
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                                : null,
-                            strokeWidth: 2,
-                            color: Colors.white54,
-                          ),
-                        ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) => _placeholderImage(),
-                  )
+                          song.coverUrl,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey[900],
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                  strokeWidth: 2,
+                                  color: Colors.white54,
+                                ),
+                              ),
+                            );
+                          },
+                          errorBuilder: (_, __, ___) => _placeholderImage(),
+                        )
                       : _placeholderImage(),
 
                   // Gradient overlay

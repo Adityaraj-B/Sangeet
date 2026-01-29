@@ -47,13 +47,155 @@ class SearchRepository {
     }
   }
 
-  // --- SUGGESTIONS ---
+  // --- AUTOCOMPLETE SUGGESTIONS (Spotify-like) ---
 
-  Future<List<String>> suggestions(String query, {int limit = 5}) async {
-    if (query.trim().isEmpty) return [];
+  /// Fetches autocomplete suggestions using the API's autocomplete endpoint.
+  /// Returns a list of suggested search queries based on partial input.
+  Future<List<String>> suggestions(String query, {int limit = 8}) async {
+    if (query.trim().length < 2) return []; // Start suggesting after 2 chars
 
-    final songs = await search(query, limit: limit);
-    return songs.map((s) => s.title).toSet().toList();
+    try {
+      // Try the autocomplete endpoint first (faster, more relevant)
+      final uri = Uri.parse(
+        '$baseUrl/search/autocomplete?query=${Uri.encodeComponent(query)}&limit=$limit',
+      );
+
+      final res = await http.get(uri);
+
+      if (res.statusCode == 200) {
+        final suggestions = _parseAutocompleteSuggestions(res.body);
+        if (suggestions.isNotEmpty) {
+          return suggestions.take(limit).toList();
+        }
+      }
+
+      // Fallback: Quick search to get suggestions from results
+      return await _fallbackSuggestions(query, limit);
+    } catch (_) {
+      return await _fallbackSuggestions(query, limit);
+    }
+  }
+
+  /// Fallback method when autocomplete endpoint is unavailable
+  Future<List<String>> _fallbackSuggestions(String query, int limit) async {
+    try {
+      // Fetch a quick search with minimal results for fast suggestions
+      final results = await Future.wait([
+        search(query, limit: 5),
+        searchArtists(query, limit: 3),
+      ]);
+
+      final songs = results[0] as List<Song>;
+      final artists = results[1] as List<Artist>;
+
+      final suggestions = <String>{};
+
+      // Add artist names first (high priority in Spotify-like search)
+      for (final artist in artists) {
+        if (_matchesQuery(artist.name, query)) {
+          suggestions.add(artist.name);
+        }
+      }
+
+      // Add song titles
+      for (final song in songs) {
+        if (_matchesQuery(song.title, query)) {
+          suggestions.add(song.title);
+        }
+        // Also suggest "Song - Artist" format for popular pattern
+        if (suggestions.length < limit) {
+          final combined = '${song.title} - ${song.artist.split(',').first.trim()}';
+          if (combined.length < 50) { // Keep suggestions concise
+            suggestions.add(combined);
+          }
+        }
+      }
+
+      return suggestions.take(limit).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Check if a string matches the query (case-insensitive prefix or contains)
+  bool _matchesQuery(String text, String query) {
+    final normalizedText = text.toLowerCase().trim();
+    final normalizedQuery = query.toLowerCase().trim();
+    return normalizedText.startsWith(normalizedQuery) ||
+           normalizedText.contains(normalizedQuery);
+  }
+
+  /// Parse autocomplete API response
+  List<String> _parseAutocompleteSuggestions(String body) {
+    try {
+      final decoded = json.decode(body);
+      final suggestions = <String>[];
+
+      // Handle various API response formats
+      if (decoded['data'] != null) {
+        final data = decoded['data'];
+
+        // Check for topquery (most relevant)
+        if (data['topquery'] != null && data['topquery']['results'] is List) {
+          for (final item in data['topquery']['results']) {
+            final title = item['title']?.toString() ?? item['name']?.toString();
+            if (title != null && title.isNotEmpty) {
+              suggestions.add(title);
+            }
+          }
+        }
+
+        // Check for songs suggestions
+        if (data['songs'] != null && data['songs']['results'] is List) {
+          for (final item in data['songs']['results']) {
+            final title = item['title']?.toString() ?? item['name']?.toString();
+            if (title != null && title.isNotEmpty && !suggestions.contains(title)) {
+              suggestions.add(title);
+            }
+          }
+        }
+
+        // Check for artists suggestions
+        if (data['artists'] != null && data['artists']['results'] is List) {
+          for (final item in data['artists']['results']) {
+            final name = item['name']?.toString() ?? item['title']?.toString();
+            if (name != null && name.isNotEmpty && !suggestions.contains(name)) {
+              suggestions.add(name);
+            }
+          }
+        }
+
+        // Check for albums suggestions
+        if (data['albums'] != null && data['albums']['results'] is List) {
+          for (final item in data['albums']['results']) {
+            final title = item['title']?.toString() ?? item['name']?.toString();
+            if (title != null && title.isNotEmpty && !suggestions.contains(title)) {
+              suggestions.add(title);
+            }
+          }
+        }
+      }
+
+      // Handle simple array response
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is String) {
+            suggestions.add(item);
+          } else if (item is Map) {
+            final title = item['title']?.toString() ??
+                          item['name']?.toString() ??
+                          item['query']?.toString();
+            if (title != null && title.isNotEmpty) {
+              suggestions.add(title);
+            }
+          }
+        }
+      }
+
+      return suggestions;
+    } catch (_) {
+      return [];
+    }
   }
 
   // --- PARSING HELPERS ---

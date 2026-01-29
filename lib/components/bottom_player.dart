@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/models/song.dart';
 import 'package:sangeet/services/audio_player_service.dart';
+import 'package:sangeet/services/audio_device_service.dart';
+import 'package:sangeet/components/device_selector_sheet.dart';
 import '../screens/body.dart';
 
 class BottomPlayer extends StatelessWidget {
@@ -125,6 +127,25 @@ class BottomPlayer extends StatelessWidget {
                             color: Colors.white,
                             onPressed: audio.playNext,
                           ),
+
+                          // Device selector button
+                          ValueListenableBuilder<AudioOutputDevice?>(
+                            valueListenable: AudioDeviceService().activeDeviceNotifier,
+                            builder: (context, activeDevice, _) {
+                              final isExternalDevice = activeDevice != null &&
+                                  activeDevice.type != AudioOutputDeviceType.phone;
+                              return IconButton(
+                                icon: Icon(
+                                  _getDeviceIcon(activeDevice?.type),
+                                  size: 20,
+                                  color: isExternalDevice
+                                      ? Colors.greenAccent
+                                      : Colors.white.withValues(alpha: 0.7),
+                                ),
+                                onPressed: () => DeviceSelectorSheet.show(context),
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -136,5 +157,22 @@ class BottomPlayer extends StatelessWidget {
         );
       },
     );
+  }
+
+  IconData _getDeviceIcon(AudioOutputDeviceType? type) {
+    switch (type) {
+      case AudioOutputDeviceType.bluetooth:
+        return Icons.bluetooth_audio_rounded;
+      case AudioOutputDeviceType.wiredHeadphones:
+        return Icons.headphones_rounded;
+      case AudioOutputDeviceType.speaker:
+        return Icons.speaker_rounded;
+      case AudioOutputDeviceType.usbAudio:
+        return Icons.usb_rounded;
+      case AudioOutputDeviceType.phone:
+      case AudioOutputDeviceType.unknown:
+      case null:
+        return Icons.speaker_group_outlined;
+    }
   }
 }

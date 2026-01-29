@@ -1,0 +1,41 @@
+import 'package:flutter/material.dart';
+
+/// Section header with optional count badge
+class SectionHeader extends StatelessWidget {
+  final String title;
+  final int? count;
+
+  const SectionHeader({
+    super.key,
+    required this.title,
+    this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+          ),
+        ),
+        if (count != null) ...[
+          const SizedBox(width: 8),
+          Text(
+            '($count)',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}

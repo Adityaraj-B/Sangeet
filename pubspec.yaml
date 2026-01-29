@@ -23,6 +23,7 @@ dependencies:
   firebase_auth: ^5.7.0
   google_sign_in: ^6.2.1
   cloud_firestore: ^5.4.0
+  permission_handler: ^11.3.1
 
 
   flutter:
@@ -34,17 +35,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter_native_splash:
-  color: "#E6D690"
-  image: assets/images/Gemini_Generated_Image_ll6zfull6zfull6z.png
+  color: "#0B0B0B"
+  image: "assets/icons/Gemini_Generated_Image_h41gohh41gohh41g.png"
   android: true
   ios: true
-  web: false
+
 
   android_12:
-    color: "#282327"
-    image: assets/images/Gemini_Generated_Image_ll6zfull6zfull6z.png
+    color: "#0B0B0B"
+    image: "assets/icons/Gemini_Generated_Image_h41gohh41gohh41g.png"
 
 flutter:
   uses-material-design: true
@@ -62,3 +64,12 @@ flutter:
           weight: 700
         - asset: assets/fonts/Merriweather-Italic-VariableFont_opsz,wdth,wght.ttf
           style: italic
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/Gemini_Generated_Image_h41gohh41gohh41g.png"
+
+  adaptive_icon_foreground: "assets/icons/Gemini_Generated_Image_h41gohh41gohh41g.png"
+  adaptive_icon_background: "#282327"
+  remove_alpha_ios: true
