@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sangeet/constants.dart';
 import 'package:sangeet/repositories/search_repo.dart';
@@ -6,23 +7,29 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sangeet/size_config.dart';
 import 'package:sangeet/models/song.dart';
 import 'package:sangeet/models/artist.dart';
+import 'package:sangeet/models/album.dart';
 import 'package:sangeet/screens/artist/artist_screen.dart';
+import 'package:sangeet/screens/albums/albums_screen.dart';
 import 'package:sangeet/services/remote_music_service.dart';
-
 import 'components/search_field.dart';
 import 'components/category_chips.dart';
-import 'components/section_header.dart';
 import 'components/shimmer_loading.dart';
 import 'components/empty_search_state.dart';
-import 'components/top_result_card.dart';
-import 'components/artist_circle.dart';
 import 'components/show_more_button.dart';
 import 'components/search_suggestions.dart';
 import 'components/recent_searches.dart';
 import 'components/search_list_item.dart';
 
-// Re-export SearchCategory from category_chips for backward compatibility
 export 'components/category_chips.dart' show SearchCategory;
+
+enum _ResultType { song, artist, album }
+
+class _RankedResult {
+  final dynamic item;
+  final int score;
+  final _ResultType type;
+  const _RankedResult({required this.item, required this.score, required this.type});
+}
 
 class SearchScreen extends StatefulWidget {
   final SearchRepository repository;
@@ -49,6 +56,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   List<Artist> _artists = [];
   List<Song> _songs = [];
+  List<Album> _albums = [];
   List<String> _suggestions = [];
   List<String> _recent = [];
 
@@ -88,411 +96,455 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   void _onChange() {
     final text = _ctrl.text;
-
-    // Fetch suggestions immediately (no debounce) for Spotify-like instant feel
-    _fetchSuggestions(text);
-
-    // Debounce the heavier search query
     _debounce?.cancel();
-    _debounce = Timer(
-      const Duration(milliseconds: 150), // Faster debounce for snappier feel
-          () {
-        if (mounted) _performQuery(text);
-      },
-    );
+
+    // Fire autocomplete suggestions immediately for fast feedback (like Spotify)
+    if (text.trim().length >= 2) {
+      _fetchAutocompleteSuggestions(text.trim());
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) _performQuery(text);
+    });
   }
 
-  Future<void> _performQuery(String query) async {
-    // Start searching after 2 characters (Spotify-like)
-    if (query.trim().length < 2) {
+  /// Fetch autocomplete suggestions in parallel for instant feedback.
+  /// These show as chips above results while full search is still loading.
+  Future<void> _fetchAutocompleteSuggestions(String query) async {
+    try {
+      final suggestions = await widget.repository.suggestions(query, limit: 6);
+      if (mounted && _ctrl.text.trim() == query) {
+        setState(() => _suggestions = suggestions);
+      }
+    } catch (_) {
+      // Silently fail — derived suggestions will fill in
+    }
+  }
+
+  Future<void> _performQuery(String query, {bool addToRecent = false}) async {
+    final trimmed = query.trim();
+    if (trimmed.length < 2) {
       setState(() {
         _artists = [];
         _songs = [];
+        _albums = [];
+        _suggestions = [];
         _loading = false;
       });
       return;
     }
-
     setState(() => _loading = true);
-
     try {
-      // Fetch more results for better ranking/filtering
-      final results = await Future.wait([
-        widget.repository.search(query, limit: 25),
-        widget.repository.searchArtists(query, limit: 8),
-      ]);
+      final words = trimmed
+          .split(RegExp(r'\s+'))
+          .where((w) => w.length >= 2)
+          .toList();
 
+      // Always fire the full query for songs, artists, and albums
+      final futures = <Future>[
+        widget.repository.search(trimmed, limit: 50),
+        widget.repository.searchArtists(trimmed, limit: 15),
+        widget.repository.searchAlbums(trimmed, limit: 15),
+      ];
+
+      // For multi-word queries, also fire each word independently
+      if (words.length > 1) {
+        for (final w in words) {
+          if (w.length >= 3) {
+            futures.add(widget.repository.search(w, limit: 20));
+            futures.add(widget.repository.searchArtists(w, limit: 8));
+            futures.add(widget.repository.searchAlbums(w, limit: 8));
+          }
+        }
+      }
+
+      final results = await Future.wait(futures);
       if (!mounted) return;
 
+      final seenSongIds = <String>{};
+      final seenArtistIds = <String>{};
+      final seenAlbumIds = <String>{};
+      final songs = <Song>[];
+      final artists = <Artist>[];
+      final albums = <Album>[];
+
+      for (final s in results[0] as List<Song>) {
+        if (seenSongIds.add(s.id)) songs.add(s);
+      }
+      for (final a in results[1] as List<Artist>) {
+        if (seenArtistIds.add(a.id)) artists.add(a);
+      }
+      for (final a in results[2] as List<Album>) {
+        if (seenAlbumIds.add(a.id)) albums.add(a);
+      }
+
+      // Merge per-word results
+      for (int i = 3; i < results.length; i++) {
+        final r = results[i];
+        if (r is List<Song>) {
+          for (final s in r) if (seenSongIds.add(s.id)) songs.add(s);
+        } else if (r is List<Artist>) {
+          for (final a in r) if (seenArtistIds.add(a.id)) artists.add(a);
+        } else if (r is List<Album>) {
+          for (final a in r) if (seenAlbumIds.add(a.id)) albums.add(a);
+        }
+      }
+
+      // Derive suggestions from real results — instant & accurate
+      _deriveSuggestions(trimmed, songs, artists, albums);
+
+      if (!mounted) return;
       setState(() {
-        _songs = results[0] as List<Song>;
-        _artists = results[1] as List<Artist>;
+        _songs = songs;
+        _artists = _filterPopularArtists(artists);
+        _albums = albums;
         _loading = false;
       });
 
-      // Only add to recent if query is meaningful (3+ chars)
-      if (query.trim().length >= 3) {
-        await _addRecent(query);
-      }
+      if (addToRecent) await _addRecent(trimmed);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  /// Advanced global search with sophisticated ranking algorithm (Spotify-like)
-  /// Prioritizes prefix matches and exact word matches for quick, relevant results
-  List<dynamic> _buildGlobalResults() {
-    final q = _ctrl.text.toLowerCase().trim();
-    if (q.isEmpty) return [];
-
-    // Normalize query for better matching
-    final normalizedQuery = _normalizeString(q);
-    final queryWords = normalizedQuery.split(' ').where((w) => w.isNotEmpty).toList();
-
-    // Score songs with Spotify-like ranking (prefix matches prioritized)
-    int scoreSong(Song s) {
-      final title = _normalizeString(s.title.toLowerCase());
-      final artist = _normalizeString(s.artist.toLowerCase());
-      final firstArtist = artist.split(',').first.trim();
-
-      int score = 1000; // Base score (lower is better)
-
-      // === EXACT MATCHES (Highest Priority) ===
-      if (title == normalizedQuery) return 0;
-      if (artist == normalizedQuery || firstArtist == normalizedQuery) return 1;
-
-      // === PREFIX MATCHES (Spotify prioritizes these heavily) ===
-      // Title starts with query - this is what Spotify does best
-      if (title.startsWith(normalizedQuery)) {
-        // Shorter titles rank higher (more exact match)
-        score = 2 + (title.length - normalizedQuery.length) ~/ 5;
-        return score.clamp(2, 15);
-      }
-
-      // Artist starts with query
-      if (firstArtist.startsWith(normalizedQuery)) {
-        score = 10 + (firstArtist.length - normalizedQuery.length) ~/ 5;
-        return score.clamp(10, 25);
-      }
-
-      // === WORD BOUNDARY MATCHES ===
-      // Check if query matches the start of any word in title
-      final titleWords = title.split(' ');
-      for (int i = 0; i < titleWords.length; i++) {
-        if (titleWords[i].startsWith(normalizedQuery)) {
-          // Earlier word position = higher ranking
-          score = 20 + (i * 5);
-          return score.clamp(20, 50);
-        }
-      }
-
-      // === MULTI-WORD QUERY MATCHING ===
-      if (queryWords.length > 1) {
-        // Check if all query words appear in order in title
-        final allWordsInTitle = queryWords.every((word) => title.contains(word));
-        final allWordsInArtist = queryWords.every((word) => artist.contains(word));
-        final combinedText = '$title $artist';
-        final allWordsInCombined = queryWords.every((word) => combinedText.contains(word));
-
-        if (allWordsInTitle) {
-          // Check if words appear in same order (phrase match)
-          if (_isPhraseMatch(title, queryWords)) {
-            return 25;
-          }
-          return 30;
-        } else if (allWordsInCombined) {
-          // Song + Artist combination match (e.g., "tum hi ho arijit")
-          return 35;
-        } else if (allWordsInArtist) {
-          return 40;
-        } else {
-          // Partial word matching
-          final matchingWords = queryWords.where((word) =>
-            title.contains(word) || artist.contains(word)
-          ).length;
-          if (matchingWords == 0) return 1000; // No match
-          score = 100 - (matchingWords * 20);
-        }
-      }
-
-      // === CONTAINS MATCHES (Lower priority) ===
-      if (title.contains(normalizedQuery)) {
-        score = score > 60 ? 60 : score;
-      } else if (artist.contains(normalizedQuery)) {
-        score = score > 70 ? 70 : score;
-      }
-
-      // Bollywood pattern matching
-      if (_matchesBollywoodPattern(s.title, s.artist, q)) {
-        score = score > 25 ? 25 : score;
-      }
-
-      // Phonetic matching for Indian romanization
-      final phoneticScore = _calculatePhoneticMatch(normalizedQuery, title, artist);
-      if (phoneticScore > 0 && phoneticScore < score) {
-        score = phoneticScore;
-      }
-
-      // Fuzzy matching for typos (only if no better match found)
-      if (score > 100) {
-        final titleSimilarity = _calculateSimilarity(normalizedQuery, title);
-        final artistSimilarity = _calculateSimilarity(normalizedQuery, artist);
-
-        if (titleSimilarity > 0.8) {
-          score = 50;
-        } else if (titleSimilarity > 0.6 || artistSimilarity > 0.7) {
-          score = 70;
-        } else if (titleSimilarity > 0.4 || artistSimilarity > 0.5) {
-          score = 90;
-        }
-      }
-
-      return score;
+  // ─── POPULAR ARTIST FILTER ────────────────────────────────────
+  // Removes unverified / no-image / duplicate artists.
+  List<Artist> _filterPopularArtists(List<Artist> raw) {
+    final seenNames = <String>{};
+    final out = <Artist>[];
+    for (final a in raw) {
+      if (a.id.isEmpty) continue;
+      if (a.name.trim().length <= 1) continue;
+      if (a.imageUrl.isEmpty) continue; // unverified artists have no image
+      final key = a.name.trim().toLowerCase();
+      if (!seenNames.add(key)) continue; // deduplicate
+      out.add(a);
     }
-
-    // Score artists with Spotify-like ranking
-    int scoreArtist(Artist a) {
-      final name = _normalizeString(a.name.toLowerCase());
-
-      int score = 1000;
-
-      // Exact match
-      if (name == normalizedQuery) return 1; // Artists rank very high on exact match
-
-      // Prefix match (Spotify-style)
-      if (name.startsWith(normalizedQuery)) {
-        score = 5 + (name.length - normalizedQuery.length) ~/ 3;
-        return score.clamp(5, 20);
-      }
-
-      // Word boundary match
-      final nameWords = name.split(' ');
-      for (int i = 0; i < nameWords.length; i++) {
-        if (nameWords[i].startsWith(normalizedQuery)) {
-          score = 25 + (i * 5);
-          return score.clamp(25, 45);
-        }
-      }
-
-      // Multi-word matching
-      if (queryWords.length > 1) {
-        final allWordsInName = queryWords.every((word) => name.contains(word));
-        if (allWordsInName) {
-          return 30;
-        }
-        final matchingWords = queryWords.where((word) => name.contains(word)).length;
-        if (matchingWords == 0) return 1000;
-        score = 80 - (matchingWords * 15);
-      }
-
-      // Contains match
-      if (name.contains(normalizedQuery)) {
-        score = score > 55 ? 55 : score;
-      }
-
-      // Fuzzy matching
-      if (score > 100) {
-        final similarity = _calculateSimilarity(normalizedQuery, name);
-        if (similarity > 0.7) {
-          score = 60;
-        } else if (similarity > 0.5) {
-          score = 80;
-        }
-      }
-
-      return score;
-    }
-
-    // Filter and score all items
-    final scoredItems = <MapEntry<dynamic, int>>[];
-
-    for (final song in _songs) {
-      final score = scoreSong(song);
-      if (score < 1000) { // Only include relevant matches
-        scoredItems.add(MapEntry(song, score));
-      }
-    }
-
-    for (final artist in _artists) {
-      final score = scoreArtist(artist);
-      if (score < 1000) {
-        scoredItems.add(MapEntry(artist, score));
-      }
-    }
-
-    // Sort by score (lower is better)
-    scoredItems.sort((a, b) => a.value.compareTo(b.value));
-
-    // Build results with Spotify-like organization
-    final results = <dynamic>[];
-
-    // Take top matches as they are (best relevance)
-    final topMatches = scoredItems.take(3).map((e) => e.key).toList();
-    results.addAll(topMatches);
-
-    // Organize remaining: prioritize diversity with songs and artists mixed
-    final remaining = scoredItems.skip(3).toList();
-    final remainingSongs = remaining.where((e) => e.key is Song).toList();
-    final remainingArtists = remaining.where((e) => e.key is Artist).toList();
-
-    // Interleave: 3 songs, 1 artist pattern
-    int songIdx = 0, artistIdx = 0;
-    while (songIdx < remainingSongs.length || artistIdx < remainingArtists.length) {
-      for (int i = 0; i < 3 && songIdx < remainingSongs.length; i++) {
-        results.add(remainingSongs[songIdx++].key);
-      }
-      if (artistIdx < remainingArtists.length) {
-        results.add(remainingArtists[artistIdx++].key);
-      }
-    }
-
-    return results.take(20).toList(); // Return more results for better UX
+    return out;
   }
 
-  /// Check if query words appear as a phrase (in order) in text
-  bool _isPhraseMatch(String text, List<String> queryWords) {
-    int lastIndex = -1;
-    for (final word in queryWords) {
-      final index = text.indexOf(word, lastIndex + 1);
-      if (index == -1) return false;
-      lastIndex = index;
+  // ─── SUGGESTIONS ─────────────────────────────────────────────
+  // Derived from live results — no extra API call needed.
+  // Now includes albums and ranks by relevance + popularity.
+  void _deriveSuggestions(
+      String query, List<Song> songs, List<Artist> artists, List<Album> albums) {
+    final q = query.toLowerCase().trim();
+    final seen = <String>{};
+    final scored = <(String, int)>[]; // (suggestion, score) — lower = better
+
+    void add(String s, int score) {
+      final k = s.trim().toLowerCase();
+      if (k.isEmpty || k == q) return;
+      if (!seen.add(k)) return;
+      scored.add((s.trim(), score));
+    }
+
+    // Artists first (highest-intent) — Spotify always shows artist at top
+    for (int i = 0; i < artists.take(5).length; i++) {
+      final a = artists[i];
+      if (_matchesFuzzy(a.name, q)) add(a.name, i);
+    }
+
+    // Album names — crucial for queries like "dhurandhar"
+    for (int i = 0; i < albums.take(5).length; i++) {
+      final a = albums[i];
+      if (_matchesFuzzy(a.name, q)) add(a.name, 5 + i);
+    }
+
+    // Song titles — prefer popular songs
+    // Sort by playCount before picking suggestions
+    final sortedSongs = List<Song>.from(songs)
+      ..sort((a, b) => (b.playCount ?? 0).compareTo(a.playCount ?? 0));
+
+    for (int i = 0; i < sortedSongs.take(10).length; i++) {
+      final s = sortedSongs[i];
+      if (_matchesFuzzy(s.title, q)) add(s.title, 10 + i);
+    }
+
+    // Sort by score (lower = more relevant)
+    scored.sort((a, b) => a.$2.compareTo(b.$2));
+
+    if (mounted) {
+      setState(() => _suggestions = scored.take(6).map((e) => e.$1).toList());
+    }
+  }
+
+  /// Fuzzy match: starts with, contains, or any word starts with query.
+  bool _matchesFuzzy(String text, String query) {
+    final t = text.toLowerCase();
+    final q = query.toLowerCase();
+    if (t.startsWith(q)) return true;
+    if (t.contains(q)) return true;
+    // Any word in text starts with query
+    if (t.split(' ').any((w) => w.startsWith(q))) return true;
+    // Any word in query matches any word in text
+    final qWords = q.split(' ').where((w) => w.length >= 2);
+    if (qWords.isNotEmpty && qWords.every((qw) => t.split(' ').any((tw) => tw.startsWith(qw)))) {
+      return true;
+    }
+    return false;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // UNIFIED RANKING ENGINE
+  // All types compete in one score space. Lower = shown first.
+  //  0-12  exact / starts-with
+  // 13-25  all words present
+  // 26-35  prefix-of-word (partial typing: "ari" → "Arijit")
+  // 36-50  majority tokens match
+  // 51-70  single word/artist hit
+  // 71-95  phonetic / fuzzy
+  // 1000   no match — hidden
+  // ─────────────────────────────────────────────────────────────
+
+  static const _kStopWords = {
+    'by', 'from', 'feat', 'ft', 'with', 'and', 'the', 'a', 'an',
+    'in', 'on', 'of', 'ke', 'ki', 'ka', 'se', 'ne', 'ko', 'hai',
+  };
+
+  List<_RankedResult> _buildRankedResults() {
+    final raw = _ctrl.text.toLowerCase().trim();
+    if (raw.isEmpty) return [];
+    final q = _normalize(raw);
+    final qWords = q.split(' ').where((w) => w.isNotEmpty).toList();
+    final tokens = qWords.where((w) => !_kStopWords.contains(w)).toList();
+    final tc = tokens.isEmpty ? qWords.length : tokens.length;
+    final tok = tokens.isEmpty ? qWords : tokens;
+
+    final ranked = <_RankedResult>[];
+    for (int i = 0; i < _songs.length; i++) {
+      final s = _songs[i];
+      final title = _normalize(s.title.toLowerCase());
+      final artist = _normalize(s.artist.toLowerCase());
+      final firstArt = artist.split(',').first.trim();
+      final combined = '$title $artist';
+      var sc = _scoreSong(q, qWords, tok, tc, title, artist, firstArt, combined, _posBonus(i, _songs.length));
+      if (sc < 1000) {
+        // Apply popularity bonus: high playCount songs get pushed up within
+        // their relevance band (max -5 bonus for viral songs)
+        sc -= _popularityBonus(s.playCount);
+        sc = sc.clamp(-5, 999);
+        ranked.add(_RankedResult(item: s, score: sc, type: _ResultType.song));
+      }
+    }
+    for (int i = 0; i < _artists.length; i++) {
+      final a = _artists[i];
+      final name = _normalize(a.name.toLowerCase());
+      final sc = _scoreArtist(q, qWords, tok, tc, name, _posBonus(i, _artists.length));
+      if (sc < 1000) ranked.add(_RankedResult(item: a, score: sc, type: _ResultType.artist));
+    }
+    for (int i = 0; i < _albums.length; i++) {
+      final a = _albums[i];
+      final name = _normalize(a.name.toLowerCase());
+      final artist = _normalize(a.artist.toLowerCase());
+      final sc = _scoreAlbum(q, qWords, tok, tc, name, artist, '$name $artist', _posBonus(i, _albums.length));
+      if (sc < 1000) ranked.add(_RankedResult(item: a, score: sc, type: _ResultType.album));
+    }
+    ranked.sort((a, b) => a.score.compareTo(b.score));
+    return ranked;
+  }
+
+  /// Popularity bonus based on playCount.
+  /// Returns 0-5: viral songs (>10M) get 5, popular (>1M) get 3, etc.
+  int _popularityBonus(int? playCount) {
+    if (playCount == null || playCount <= 0) return 0;
+    if (playCount > 50000000) return 5; // 50M+
+    if (playCount > 10000000) return 4; // 10M+
+    if (playCount > 1000000) return 3;  // 1M+
+    if (playCount > 100000) return 2;   // 100K+
+    if (playCount > 10000) return 1;    // 10K+
+    return 0;
+  }
+
+  int _posBonus(int idx, int total) {
+    if (total <= 1) return 0;
+    return ((total - 1 - idx) * 4 ~/ (total - 1)).clamp(0, 4);
+  }
+
+  bool _phraseOrdered(String text, List<String> words) {
+    int cursor = 0;
+    for (final w in words) {
+      final idx = text.indexOf(w, cursor);
+      if (idx == -1) return false;
+      cursor = idx + w.length;
     }
     return true;
   }
 
-  /// Normalize string by removing extra spaces and special characters
-  /// Optimized for Indian/Bollywood songs with romanization support
-  String _normalizeString(String s) {
-    return s
-        .replaceAll(RegExp(r'[^\w\s]'), '') // Remove special chars
-        .replaceAll(RegExp(r'\s+'), ' ') // Normalize spaces
-        .toLowerCase()
-        .trim();
+  int _cov(String text, List<String> toks) =>
+      toks.where((w) => text.contains(w)).length;
+
+  /// Does any word in [text] start with [qw]? Handles "ari" → "arijit".
+  bool _wordPrefix(String text, String qw) {
+    if (qw.length < 2) return false;
+    return text.split(' ').any((w) => w.startsWith(qw));
   }
 
-  /// Check if query matches common Bollywood search patterns
-  bool _matchesBollywoodPattern(String title, String artist, String query) {
-    final normalizedTitle = _normalizeString(title);
-    final normalizedArtist = _normalizeString(artist);
-    final normalizedQuery = _normalizeString(query);
+  int _prefixCov(String text, List<String> qWords) =>
+      qWords.where((qw) => _wordPrefix(text, qw)).length;
 
-    // Check for movie name pattern (common in Bollywood)
-    // e.g., "kajra re bunty aur babli" should match "Kajra Re" from movie "Bunty Aur Babli"
-    if (normalizedQuery.contains(' ')) {
-      final words = normalizedQuery.split(' ');
+  int _scoreSong(String q, List<String> qWords, List<String> tok, int tc,
+      String title, String artist, String firstArt, String combined, int bonus) {
+    final qLen = q.length;
+    if (title == q) return (0 - bonus).clamp(-4, 0);
+    if (title.startsWith(q)) return (4 + ((title.length - qLen) ~/ 5).clamp(0, 8) - bonus).clamp(0, 12);
+    if (qWords.length > 1 && qWords.every((w) => title.contains(w))) {
+      return _phraseOrdered(title, qWords) ? (12 - bonus).clamp(8, 12) : (17 - bonus).clamp(13, 17);
+    }
+    if (tc > 1 && _cov(title, tok) == tc) return (20 - bonus).clamp(16, 20);
+    if (tc > 1 && _cov(combined, tok) == tc) return (25 - bonus).clamp(21, 25);
+    final prefHits = _prefixCov(combined, qWords);
+    if (prefHits == qWords.length) {
+      return _prefixCov(title, qWords) == qWords.length
+          ? (16 - bonus).clamp(12, 16)
+          : (26 - bonus).clamp(22, 26);
+    }
+    if (qWords.length > 1 && prefHits >= (qWords.length * 0.6).ceil()) return (32 - bonus).clamp(28, 32);
+    if (qWords.length == 1 && _wordPrefix(title, q)) {
+      final pos = title.split(' ').indexWhere((w) => w.startsWith(q));
+      return (14 + pos.clamp(0, 5) * 3 - bonus).clamp(10, 26);
+    }
+    if (firstArt == q) return (30 - bonus).clamp(26, 30);
+    if (firstArt.startsWith(q)) return (35 - bonus).clamp(31, 35);
+    if (_wordPrefix(firstArt, q)) return (38 - bonus).clamp(34, 38);
+    if (title.contains(q)) return (40 - bonus).clamp(36, 40);
+    if (tc > 1) {
+      final cov = _cov(combined, tok);
+      if (cov >= (tc * 0.5).ceil()) return (50 - cov * 2 - bonus).clamp(38, 50);
+      if (_cov(title, tok) >= 1) return (58 - bonus).clamp(54, 58);
+    }
+    if (artist.contains(q)) return (62 - bonus).clamp(58, 62);
+    if (qWords.any((w) => w.length >= 3 && combined.contains(w))) return (66 - bonus).clamp(62, 66);
+    if (qWords.any((w) => w.length >= 2 && _wordPrefix(combined, w))) return (72 - bonus).clamp(68, 72);
+    final ph = _phoneticScore(q, title, artist);
+    if (ph < 1000) return (ph - bonus).clamp(0, 90);
+    final sim = _bigramSim(q, title);
+    if (sim > 0.65) return (80 - bonus).clamp(76, 80);
+    if (sim > 0.45) return (90 - bonus).clamp(86, 90);
+    for (final qw in qWords) {
+      if (qw.length >= 3 && _bigramSim(qw, title) > 0.55) return (94 - bonus).clamp(90, 94);
+    }
+    return 1000;
+  }
 
-      // Check if first word(s) match title and last word(s) match artist/movie
-      for (int i = 1; i < words.length; i++) {
-        final titlePart = words.sublist(0, i).join(' ');
-        final artistPart = words.sublist(i).join(' ');
+  int _scoreArtist(String q, List<String> qWords, List<String> tok, int tc, String name, int bonus) {
+    final qLen = q.length;
+    if (name == q) return (0 - bonus).clamp(-4, 0);
+    if (name.startsWith(q)) return (3 + ((name.length - qLen) ~/ 4).clamp(0, 8) - bonus).clamp(0, 11);
+    if (qWords.length > 1 && qWords.every((w) => name.contains(w))) {
+      return _phraseOrdered(name, qWords) ? (13 - bonus).clamp(9, 13) : (18 - bonus).clamp(14, 18);
+    }
+    final prefHits = _prefixCov(name, qWords);
+    if (prefHits == qWords.length) return (20 - bonus).clamp(16, 20);
+    if (qWords.length > 1 && prefHits >= (qWords.length * 0.6).ceil()) return (27 - bonus).clamp(23, 27);
+    if (qWords.length == 1 && _wordPrefix(name, q)) return (16 - bonus).clamp(12, 18);
+    if (name.contains(q)) return (33 - bonus).clamp(29, 33);
+    if (tc > 1) {
+      final cov = _cov(name, tok);
+      if (cov >= (tc * 0.4).ceil()) return (44 - cov - bonus).clamp(38, 44);
+    }
+    if (qWords.any((w) => w.length >= 2 && _wordPrefix(name, w))) return (48 - bonus).clamp(44, 48);
+    final sim = _bigramSim(q, name);
+    if (sim > 0.65) return (55 - bonus).clamp(51, 55);
+    if (sim > 0.45) return (68 - bonus).clamp(64, 68);
+    return 1000;
+  }
 
-        if (normalizedTitle.contains(titlePart) && normalizedArtist.contains(artistPart)) {
-          return true;
-        }
+  int _scoreAlbum(String q, List<String> qWords, List<String> tok, int tc,
+      String name, String artist, String combined, int bonus) {
+    final qLen = q.length;
+    if (name == q) return (0 - bonus).clamp(-4, 0);
+    if (name.startsWith(q)) return (5 + ((name.length - qLen) ~/ 4).clamp(0, 8) - bonus).clamp(0, 13);
+    if (qWords.length > 1 && qWords.every((w) => name.contains(w))) {
+      return _phraseOrdered(name, qWords) ? (15 - bonus).clamp(11, 15) : (20 - bonus).clamp(16, 20);
+    }
+    if (tc > 1 && _cov(combined, tok) == tc) return (23 - bonus).clamp(19, 23);
+    final prefHits = _prefixCov(combined, qWords);
+    if (prefHits == qWords.length) return (24 - bonus).clamp(20, 24);
+    if (qWords.length > 1 && prefHits >= (qWords.length * 0.6).ceil()) return (30 - bonus).clamp(26, 30);
+    if (qWords.length == 1 && _wordPrefix(name, q)) return (26 - bonus).clamp(22, 30);
+    if (artist.startsWith(q)) return (32 - bonus).clamp(28, 32);
+    if (name.contains(q)) return (38 - bonus).clamp(34, 38);
+    if (artist.contains(q)) return (46 - bonus).clamp(42, 46);
+    if (tc > 1) {
+      final cov = _cov(combined, tok);
+      if (cov >= (tc * 0.4).ceil()) return (54 - cov * 2 - bonus).clamp(44, 54);
+      if (_cov(name, tok) >= 1) return (60 - bonus).clamp(56, 60);
+    }
+    if (qWords.any((w) => w.length >= 3 && combined.contains(w))) return (64 - bonus).clamp(60, 64);
+    final sim = _bigramSim(q, name);
+    if (sim > 0.65) return (70 - bonus).clamp(66, 70);
+    if (sim > 0.45) return (82 - bonus).clamp(78, 82);
+    return 1000;
+  }
+  //
+  //   Scores are integers where lower = better.  Each type (songs /
+  //   artists / albums) is ranked in its own list so the best song
+  //   always heads the Songs section, best artist heads Artists, etc.
+  //
+  // ─────────────────────────────────────────────────────────────
+  // UTILITY HELPERS
+  // ─────────────────────────────────────────────────────────────
+
+  /// Strip punctuation, collapse whitespace, lowercase.
+  String _normalize(String s) => s
+      .replaceAll(RegExp(r"[^\w\s]"), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// Bigram (character-pair) similarity — much better than char-set overlap
+  /// for detecting typos and romanisation variants (0.0 – 1.0).
+  double _bigramSim(String a, String b) {
+    if (a == b) return 1.0;
+    if (a.length < 2 || b.length < 2) {
+      // Single-char fallback: plain contains
+      return (a.contains(b) || b.contains(a)) ? 0.6 : 0.0;
+    }
+
+    Set<String> bigrams(String s) {
+      final set = <String>{};
+      for (int i = 0; i < s.length - 1; i++) {
+        set.add(s.substring(i, i + 2));
       }
+      return set;
     }
 
-    // Check for "song movie" pattern
-    // e.g., "tum hi ho aashiqui" should match "Tum Hi Ho" from "Aashiqui 2"
-    final titleWords = normalizedTitle.split(' ');
-    final queryWords = normalizedQuery.split(' ');
-
-    if (queryWords.length >= 2 && titleWords.isNotEmpty) {
-      // Check if query starts with title
-      final potentialTitle = queryWords.take(titleWords.length.clamp(0, queryWords.length - 1)).join(' ');
-      if (normalizedTitle.startsWith(potentialTitle)) {
-        return true;
-      }
-    }
-
-    return false;
+    final aB = bigrams(a);
+    final bB = bigrams(b);
+    final intersection = aB.intersection(bB).length;
+    return (2.0 * intersection) / (aB.length + bB.length);
   }
 
-  /// Calculate similarity between two strings (0.0 to 1.0)
-  double _calculateSimilarity(String s1, String s2) {
-    if (s1 == s2) return 1.0;
-    if (s1.isEmpty || s2.isEmpty) return 0.0;
-
-    // Use longest common subsequence ratio
-    final longer = s1.length > s2.length ? s1 : s2;
-    final shorter = s1.length > s2.length ? s2 : s1;
-
-    // Simple contains check for performance
-    if (longer.contains(shorter)) {
-      return shorter.length / longer.length;
-    }
-
-    // Character overlap ratio
-    final s1Chars = s1.split('').toSet();
-    final s2Chars = s2.split('').toSet();
-    final intersection = s1Chars.intersection(s2Chars);
-
-    return intersection.length / s1Chars.union(s2Chars).length;
-  }
-
-  /// Phonetic matching for common romanization variations in Indian songs
-  /// Handles variations like: ae/e, o/oh, a/aa, i/ee, u/oo, etc.
-  int _calculatePhoneticMatch(String query, String title, String artist) {
-    // Common romanization mappings for Indian languages
-    final Map<String, List<String>> phoneticMappings = {
-      'aa': ['a', 'aa', 'aaa'],
-      'ee': ['i', 'ee', 'ii'],
-      'oo': ['u', 'oo', 'uu'],
-      'ae': ['e', 'ae', 'ai'],
-      'oh': ['o', 'oh', 'au'],
-      'ch': ['ch', 'chh'],
-      'sh': ['sh', 'shh'],
-      'kh': ['kh', 'khh', 'k'],
-      'th': ['th', 'thh', 't'],
-      'ph': ['ph', 'phh', 'f'],
-      'dh': ['dh', 'dhh', 'd'],
-      'bh': ['bh', 'bhh', 'b'],
-      'gh': ['gh', 'ghh', 'g'],
-      'jh': ['jh', 'jhh', 'j'],
-      'r': ['r', 'rr'],
-      'n': ['n', 'nn'],
-      'y': ['y', 'yy'],
+  /// Phonetic / romanisation score for Indian-language songs.
+  /// Returns a score (lower = better) or 1000 if nothing matches.
+  int _phoneticScore(String query, String title, String artist) {
+    const Map<String, List<String>> map = {
+      'aa': ['a'],  'ee': ['i'],  'oo': ['u'],
+      'ae': ['e', 'ai'], 'oh': ['o', 'au'],
+      'bh': ['b'],  'ch': ['c'],  'dh': ['d'],
+      'gh': ['g'],  'jh': ['j'],  'kh': ['k'],
+      'ph': ['f', 'p'], 'sh': ['s'], 'th': ['t'],
     };
 
-    // Generate phonetic variations of query
-    String generateVariation(String text, String from, String to) {
-      return text.replaceAll(from, to);
-    }
+    int best = 1000;
 
-    // Check if any phonetic variation matches
-    int bestScore = 1000;
-
-    for (final entry in phoneticMappings.entries) {
-      for (final variant in entry.value) {
+    for (final entry in map.entries) {
+      for (final alt in entry.value) {
         if (query.contains(entry.key)) {
-          final modifiedQuery = generateVariation(query, entry.key, variant);
-
-          if (title.contains(modifiedQuery)) {
-            if (title.startsWith(modifiedQuery)) {
-              bestScore = bestScore > 35 ? 35 : bestScore;
-            } else {
-              bestScore = bestScore > 45 ? 45 : bestScore;
-            }
-          }
-
-          if (artist.contains(modifiedQuery)) {
-            bestScore = bestScore > 50 ? 50 : bestScore;
-          }
+          final v = query.replaceAll(entry.key, alt);
+          if (title.startsWith(v))  { best = best > 35 ? 35 : best; }
+          else if (title.contains(v)) { best = best > 45 ? 45 : best; }
+          else if (artist.contains(v)){ best = best > 51 ? 51 : best; }
         }
-
-        // Reverse check: if title/artist has the variant
-        if (title.contains(entry.key) || artist.contains(entry.key)) {
-          final modifiedQuery = generateVariation(query, variant, entry.key);
-
-          if (title.contains(modifiedQuery) || artist.contains(modifiedQuery)) {
-            bestScore = bestScore > 40 ? 40 : bestScore;
-          }
+        if (title.contains(entry.key)) {
+          final tv = title.replaceAll(entry.key, alt);
+          if (tv.contains(query)) { best = best > 41 ? 41 : best; }
         }
       }
     }
-
-    return bestScore < 1000 ? bestScore : 0;
+    return best;
   }
+
 
   Future<void> _clearRecent() async {
     final prefs = await SharedPreferences.getInstance();
@@ -500,25 +552,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     if (mounted) setState(() => _recent = []);
   }
 
-  Future<void> _fetchSuggestions(String query) async {
-    // Start suggesting after 2 characters (Spotify-like behavior)
-    if (query.trim().length < 2) {
-      setState(() => _suggestions = []);
-      return;
-    }
-
-    try {
-      final sug = await widget.repository.suggestions(query, limit: 6);
-      if (!mounted) return;
-      setState(() => _suggestions = sug);
-    } catch (_) {
-      // Silently fail - suggestions are non-critical
-    }
-  }
-
   Future<void> _loadRecent() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _recent = prefs.getStringList(_kRecentKey) ?? []);
+    if (mounted) setState(() => _recent = prefs.getStringList(_kRecentKey) ?? []);
   }
 
   Future<void> _addRecent(String item) async {
@@ -536,7 +572,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     _ctrl.selection =
         TextSelection.fromPosition(TextPosition(offset: suggestion.length));
     _focusNode.unfocus();
-    _performQuery(suggestion);
+    _performQuery(suggestion, addToRecent: true);
   }
 
   void _onSongTap(Song song) {
@@ -558,145 +594,198 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     );
   }
 
+  void _onAlbumTap(Album album) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AlbumScreen(
+          album: album,
+          musicService:
+          RemoteMusicService('https://vercelapi-gamma.vercel.app/api'),
+          onPlaySong: widget.onPlay,
+        ),
+      ),
+    );
+  }
+
   Widget _buildResults() {
-    if (_loading) {
-      return const ShimmerLoading();
-    }
+    if (_loading) return const ShimmerLoading();
 
-    final results = _buildGlobalResults();
+    final ranked = _buildRankedResults();
 
-    if (results.isEmpty && _ctrl.text.trim().isNotEmpty) {
+    if (ranked.isEmpty && _ctrl.text.trim().isNotEmpty) {
       return EmptySearchState(query: _ctrl.text);
     }
+    if (ranked.isEmpty) return const SizedBox.shrink();
 
-    if (results.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    // Separate items by type
-    final songs = results.whereType<Song>().toList();
-    final artists = results.whereType<Artist>().toList();
-    final topResult = results.isNotEmpty ? results.first : null;
+    final songs = ranked.where((r) => r.type == _ResultType.song).map((r) => r.item as Song).toList();
+    final artists = ranked.where((r) => r.type == _ResultType.artist).map((r) => r.item as Artist).toList();
+    final albums = ranked.where((r) => r.type == _ResultType.album).map((r) => r.item as Album).toList();
 
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 0.025), end: Offset.zero).animate(animation),
+          child: child,
+        ),
+      ),
       child: Column(
-        key: ValueKey(_ctrl.text),
+        key: ValueKey(_ctrl.text + _selectedCategory.name),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Category filter chips
           CategoryChips(
             selectedCategory: _selectedCategory,
             songCount: songs.length,
             artistCount: artists.length,
-            onCategoryChanged: (category) => setState(() => _selectedCategory = category),
+            albumCount: albums.length,
+            onCategoryChanged: (c) => setState(() => _selectedCategory = c),
           ),
           const SizedBox(height: 20),
-
-          // Filtered results based on category
-          if (_selectedCategory == SearchCategory.all) ...[
-            // Top Result Section (Spotify-style)
-            if (topResult != null) ...[
-              const SectionHeader(title: 'Top result'),
-              const SizedBox(height: 12),
-              TopResultCard(
-                item: topResult,
-                onTap: () {
-                  if (topResult is Song) {
-                    _onSongTap(topResult);
-                  } else {
-                    _onArtistTap(topResult);
-                  }
-                },
-              ),
-              const SizedBox(height: 28),
-            ],
-
-            // Songs Section
-            if (songs.isNotEmpty) ...[
-              SectionHeader(title: 'Songs', count: songs.length),
-              const SizedBox(height: 12),
-              ...songs.take(4).map((song) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: SongResultItem(
-                  song: song,
-                  onTap: () => _onSongTap(song),
-                ),
-              )),
-              if (songs.length > 4)
-                ShowMoreButton(
-                  type: 'songs',
-                  remaining: songs.length - 4,
-                  onTap: () => setState(() => _selectedCategory = SearchCategory.songs),
-                ),
-              const SizedBox(height: 24),
-            ],
-
-            // Artists Section
-            if (artists.isNotEmpty) ...[
-              SectionHeader(title: 'Artists', count: artists.length),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 140,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: artists.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 16),
-                  itemBuilder: (_, i) => ArtistCircle(
-                    artist: artists[i],
-                    onTap: () => _onArtistTap(artists[i]),
-                  ),
-                ),
-              ),
-            ],
-          ] else if (_selectedCategory == SearchCategory.songs) ...[
-            SectionHeader(title: 'Songs', count: songs.length),
-            const SizedBox(height: 12),
-            ...songs.map((song) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: SongResultItem(
-                song: song,
-                onTap: () => _onSongTap(song),
-              ),
-            )),
+          if (_selectedCategory == SearchCategory.all)
+            _buildUnifiedList(ranked)
+          else if (_selectedCategory == SearchCategory.songs) ...[
+            _SectionLabel(title: 'Songs', count: songs.length),
+            const SizedBox(height: 6),
+            ...songs.map((s) => SongResultItem(song: s, onTap: () => _onSongTap(s))),
           ] else if (_selectedCategory == SearchCategory.artists) ...[
-            SectionHeader(title: 'Artists', count: artists.length),
-            const SizedBox(height: 12),
-            ...artists.map((artist) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ArtistResultItem(
-                artist: artist,
-                onTap: () => _onArtistTap(artist),
-              ),
-            )),
+            _SectionLabel(title: 'Artists', count: artists.length),
+            const SizedBox(height: 6),
+            ...artists.map((a) => ArtistResultItem(artist: a, onTap: () => _onArtistTap(a))),
+          ] else if (_selectedCategory == SearchCategory.albums) ...[
+            _SectionLabel(title: 'Albums', count: albums.length),
+            const SizedBox(height: 6),
+            ...albums.map((a) => AlbumResultItem(album: a, onTap: () => _onAlbumTap(a))),
           ],
         ],
       ),
     );
   }
 
+  Widget _buildUnifiedList(List<_RankedResult> ranked) {
+    // Show top 18 results in unified order (songs, artists, albums mixed by score)
+    final top = ranked.take(18).toList();
+    final topAlbumIds = top.where((r) => r.type == _ResultType.album).map((r) => (r.item as Album).id).toSet();
+
+    final remainingSongs = ranked.skip(18)
+        .where((r) => r.type == _ResultType.song)
+        .map((r) => r.item as Song)
+        .toList();
+
+    // Only show albums in the "Albums" section that aren't already in top results
+    final remainingAlbums = ranked
+        .where((r) => r.type == _ResultType.album)
+        .map((r) => r.item as Album)
+        .where((a) => !topAlbumIds.contains(a.id))
+        .take(6)
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...top.map((r) {
+          if (r.type == _ResultType.song) {
+            final s = r.item as Song;
+            return SongResultItem(song: s, onTap: () => _onSongTap(s));
+          } else if (r.type == _ResultType.artist) {
+            final a = r.item as Artist;
+            return _ArtistInlineRow(artist: a, onTap: () => _onArtistTap(a));
+          } else {
+            final a = r.item as Album;
+            return AlbumResultItem(album: a, onTap: () => _onAlbumTap(a));
+          }
+        }),
+        if (remainingSongs.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          _SectionLabel(title: 'More Songs'),
+          const SizedBox(height: 6),
+          ...remainingSongs.take(6).map((s) => SongResultItem(song: s, onTap: () => _onSongTap(s))),
+          if (remainingSongs.length > 6) ...[
+            const SizedBox(height: 4),
+            ShowMoreButton(
+              type: 'songs',
+              remaining: remainingSongs.length - 6,
+              onTap: () => setState(() => _selectedCategory = SearchCategory.songs),
+            ),
+          ],
+        ],
+        if (remainingAlbums.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          _SectionLabel(title: 'Albums'),
+          const SizedBox(height: 6),
+          ...remainingAlbums.map((a) => AlbumResultItem(album: a, onTap: () => _onAlbumTap(a))),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     SizeConfig.init(context);
+    final double sidePad = getProportionateScreenWidth(20);
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
     return Scaffold(
       backgroundColor: kBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        title: const Text('Discover',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w700)),
-        centerTitle: true,
+      extendBodyBehindAppBar: true,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(56),
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+              height: 56 + MediaQuery.of(context).padding.top,
+              color: kBackgroundColor.withValues(alpha: 0.82),
+              alignment: Alignment.bottomCenter,
+              padding: EdgeInsets.only(
+                  top: MediaQuery.of(context).padding.top,
+                  left: sidePad,
+                  right: sidePad,
+                  bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, -0.3),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: _isSearching
+                        ? const SizedBox.shrink(key: ValueKey('no-title'))
+                        : const Text(
+                            key: ValueKey('title'),
+                            'Search',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.6,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
-          getProportionateScreenWidth(16),
-          16,
-          getProportionateScreenWidth(16),
-          MediaQuery.of(context).padding.bottom + 24,
+          sidePad,
+          MediaQuery.of(context).padding.top + 56 + 12,
+          sidePad,
+          bottomPad + 32,
         ),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: Column(
@@ -710,9 +799,15 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                 _focusNode.requestFocus();
                 setState(() => _selectedCategory = SearchCategory.all);
               },
-              onSubmitted: (_) => _performQuery(_ctrl.text),
+              onSubmitted: (_) {
+                final query = _ctrl.text.trim();
+                if (query.length >= 2) {
+                  _addRecent(query);
+                  _focusNode.unfocus();
+                }
+              },
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             SearchSuggestions(
               suggestions: _suggestions,
               isSearching: _isSearching,
@@ -724,11 +819,168 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               onRecentTap: _applySuggestion,
               onClear: _clearRecent,
             ),
-            const SizedBox(height: 24),
             _buildResults(),
           ],
         ),
       ),
     );
   }
+}
+
+/// Inline section label
+class _SectionLabel extends StatelessWidget {
+  final String title;
+  final int? count;
+
+  const _SectionLabel({required this.title, this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+          ),
+        ),
+        if (count != null) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(100),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// ARTIST INLINE ROW — shown inside the merged result list
+// ─────────────────────────────────────────────────────────────
+
+class _ArtistInlineRow extends StatefulWidget {
+  final Artist artist;
+  final VoidCallback onTap;
+  const _ArtistInlineRow({required this.artist, required this.onTap});
+
+  @override
+  State<_ArtistInlineRow> createState() => _ArtistInlineRowState();
+}
+
+class _ArtistInlineRowState extends State<_ArtistInlineRow> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        margin: const EdgeInsets.symmetric(vertical: 1),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 10),
+        decoration: BoxDecoration(
+          color: _pressed
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: widget.artist.imageUrl.isNotEmpty
+                    ? Image.network(
+                        widget.artist.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stack) => _placeholder(),
+                      )
+                    : _placeholder(),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.artist.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Text(
+                      'Artist',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.18),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder() => Container(
+        color: const Color(0xFF1E1E22),
+        child: Center(
+          child: Icon(Icons.person_rounded,
+              color: Colors.white.withValues(alpha: 0.12), size: 24),
+        ),
+      );
 }

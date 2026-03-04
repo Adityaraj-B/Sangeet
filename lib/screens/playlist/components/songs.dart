@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../models/song.dart';
 import '../../../components/song_options.dart';
 import '../../../services/playlist_provider.dart';
+import '../../../services/queue.dart';
 
 class PlaylistSongs extends StatelessWidget {
   final List<Song> songs;
@@ -16,6 +17,24 @@ class PlaylistSongs extends StatelessWidget {
     required this.onPlaySong,
     required this.playlistId,
   });
+
+  void _handleSongTap(Song song) {
+    // Find the index of the tapped song
+    final songIndex = songs.indexWhere((s) => s.id == song.id);
+
+    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // This ensures playSong() sees the manual queue and won't load similar songs
+    if (songIndex >= 0 && songIndex < songs.length - 1) {
+      final remainingSongs = songs.sublist(songIndex + 1);
+      final queueService = QueueService();
+
+      // Add playlist songs to queue first
+      queueService.addAllToQueue(remainingSongs);
+    }
+
+    // Now play the tapped song
+    onPlaySong(song);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +190,7 @@ class PlaylistSongs extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      onTap: () => onPlaySong(song),
+                      onTap: () => _handleSongTap(song),
                       trailing: IconButton(
                         icon: Icon(
                           Icons.more_vert,
@@ -181,7 +200,7 @@ class PlaylistSongs extends StatelessWidget {
                           SongOptionsSheet.show(
                             context,
                             song,
-                            onPlay: () => onPlaySong(song),
+                            onPlay: () => _handleSongTap(song),
                           );
                         },
                       ),

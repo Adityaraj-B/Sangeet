@@ -7,6 +7,7 @@ import 'package:sangeet/services/remote_music_service.dart';
 
 import '../../components/Song_options.dart';
 import '../../services/audio_player_service.dart';
+import '../../services/queue.dart';
 
 class AlbumScreen extends StatefulWidget {
   final Album album;
@@ -37,12 +38,33 @@ class _AlbumScreenState extends State<AlbumScreen> {
   void _playAll() {
     if (_songs.isEmpty) return;
     final audio = AudioPlayerService();
-    widget.onPlaySong(_songs.first);
-    audio.queue.clearQueue();
 
+    // IMPORTANT: Clear queue and add remaining songs BEFORE playing
+    audio.queue.clearQueue();
     if (_songs.length > 1) {
       audio.queue.addAllToQueue(_songs.sublist(1));
     }
+
+    // Now play the first song
+    widget.onPlaySong(_songs.first);
+  }
+
+  void _handleSongTap(Song song) {
+    // Find the index of the tapped song
+    final songIndex = _songs.indexWhere((s) => s.id == song.id);
+
+    final queueService = QueueService();
+
+    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // This ensures playSong() sees the manual queue and won't load similar songs
+    if (songIndex >= 0 && songIndex < _songs.length - 1) {
+      final remainingSongs = _songs.sublist(songIndex + 1);
+      // Add album songs to queue first
+      queueService.addAllToQueue(remainingSongs);
+    }
+
+    // Now play the tapped song
+    widget.onPlaySong(song);
   }
 
   Future<void> _fetchSongs() async {
@@ -87,8 +109,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     return _SongTile(
                       song: _songs[index],
                       index: index,
-                      onTap: () => widget.onPlaySong(_songs[index]),
-                      onPlaySong: widget.onPlaySong,
+                      onTap: () => _handleSongTap(_songs[index]),
+                      onPlaySong: _handleSongTap,
                     );
                       },
                   childCount: _songs.length,

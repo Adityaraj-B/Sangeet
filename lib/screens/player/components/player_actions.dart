@@ -171,7 +171,7 @@ class PlayerActions extends StatelessWidget {
                       title: 'Download',
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        _showGlassSnack(context, 'Download started');
+                        _showGlassSnack(context, 'Not implemented yet');
                       },
                     ),
 

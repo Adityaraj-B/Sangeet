@@ -12,45 +12,59 @@ class EmptySearchState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 60),
+      padding: const EdgeInsets.only(top: 80),
       child: Center(
         child: Column(
           children: [
+            // Subtle icon container
             Container(
-              padding: const EdgeInsets.all(20),
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
                 shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.04),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  width: 1,
+                ),
               ),
               child: Icon(
                 Icons.search_off_rounded,
-                size: 48,
-                color: Colors.white.withValues(alpha: 0.3),
+                size: 30,
+                color: Colors.white.withValues(alpha: 0.2),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Text(
-              'No results found',
+              'No results for',
+              textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '"$query"',
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
+                letterSpacing: -0.5,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'for "$query"',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               'Try different keywords or check spelling',
+              textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: Colors.white.withValues(alpha: 0.25),
                 fontSize: 13,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],

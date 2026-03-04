@@ -72,6 +72,7 @@ class _TopBarState extends State<TopBar> {
             GestureDetector(
               onTap: widget.onProfileTap,
               child: Container(
+                key: ValueKey(_profileImagePath ?? 'no-library-profile-image'),
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
@@ -100,7 +101,7 @@ class _TopBarState extends State<TopBar> {
                   image: _profileImagePath != null
                       ? DecorationImage(
                     image: _profileImagePath!.startsWith('http')
-                        ? NetworkImage(_profileImagePath!)
+                        ? NetworkImage(_profileImagePath!) as ImageProvider
                         : FileImage(File(_profileImagePath!)),
                     fit: BoxFit.cover,
                   )

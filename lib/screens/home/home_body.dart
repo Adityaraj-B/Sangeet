@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/album.dart';
 import '../../models/song.dart';
 import '../../services/remote_music_service.dart';
+import '../../services/home_feed_service.dart';
 import '../../services/playlist_provider.dart';
 import '../../services/recently_played.dart';
 import '../../services/like_service.dart';
@@ -18,6 +19,7 @@ import 'components/song_cards.dart';
 import 'components/playlist_widgets.dart';
 import 'components/quick_play_grid.dart';
 import 'components/old components/trending_songs.dart';
+import 'components/old components/trending_albums.dart';
 import 'package:sangeet/constants.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -34,16 +36,30 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMixin {
   final ScrollController _scrollCtrl = ScrollController();
   late final RemoteMusicService _musicService;
+  late final HomeFeedService _feedService;
 
   bool _loading = true;
   List<Song> _trending = [];
   List<Album> _trendingAlbums = [];
+  List<Song> _personalizedSongs = [];
+  List<Song> _newReleases = [];
+  List<Song> _moodSongs = [];
+  String _moodLabel = '';
+  List<Album> _newReleaseAlbums = [];
 
   @override
   void initState() {
     super.initState();
     _musicService = RemoteMusicService('https://vercelapi-gamma.vercel.app/api');
+    _feedService = HomeFeedService(_musicService);
     _loadHomeData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Wire up LikeService so personalization can use liked songs
+    _feedService.likeService = context.read<LikeService>();
   }
 
   @override
@@ -53,18 +69,23 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   Future<void> _onRefresh() async {
+    _feedService.invalidateCache();
     await _loadHomeData();
   }
 
   Future<void> _loadHomeData() async {
     setState(() => _loading = true);
     try {
-      final trendingSongs = await _musicService.getTrending();
-      final trendingAlbums = await _musicService.getTrendingAlbums();
+      final feedData = await _feedService.loadHomeFeed();
 
       setState(() {
-        _trending = trendingSongs;
-        _trendingAlbums = trendingAlbums;
+        _trending = feedData.trendingSongs;
+        _trendingAlbums = feedData.trendingAlbums;
+        _personalizedSongs = feedData.personalizedSongs;
+        _newReleases = feedData.newReleases;
+        _moodSongs = feedData.moodSongs;
+        _moodLabel = feedData.moodLabel;
+        _newReleaseAlbums = feedData.newReleaseAlbums;
         _loading = false;
       });
     } catch (_) {
@@ -77,6 +98,22 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     if (hour < 12) return 'Good morning';
     if (hour < 17) return 'Good afternoon';
     return 'Good evening';
+  }
+
+  IconData get _moodIcon {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return Icons.wb_sunny_rounded;
+    if (hour >= 12 && hour < 17) return Icons.wb_cloudy_rounded;
+    if (hour >= 17 && hour < 21) return Icons.nightlife_rounded;
+    return Icons.dark_mode_rounded;
+  }
+
+  Color get _moodColor {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return const Color(0xFFFFA726);
+    if (hour >= 12 && hour < 17) return const Color(0xFF42A5F5);
+    if (hour >= 17 && hour < 21) return const Color(0xFFAB47BC);
+    return const Color(0xFF5C6BC0);
   }
 
   Future<void> _showCreatePlaylistDialog() async {
@@ -180,13 +217,29 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
+            // Personalized "Based on Your Recent Plays" Section
+            if (_personalizedSongs.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: HomeSectionHeader(
+                  title: 'Based on Your Plays',
+                  icon: Icons.auto_awesome_rounded,
+                  accentColor: const Color(0xFFFF9800),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 14)),
+              SliverToBoxAdapter(
+                child: _buildPersonalizedSongsRow(),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 28)),
+            ],
+
             // Trending Albums Section
             SliverToBoxAdapter(
               child: HomeSectionHeader(
                 title: 'Trending Albums',
                 icon: Icons.album_rounded,
                 accentColor: const Color(0xFF1DB954),
-                onSeeAll: () {},
+                onSeeAll: () => _navigateToTrendingAlbums(),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 14)),
@@ -209,6 +262,38 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               child: _buildTrendingSongsRow(),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
+
+            // New Releases Section
+            if (_newReleases.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: HomeSectionHeader(
+                  title: 'New Releases',
+                  icon: Icons.new_releases_rounded,
+                  accentColor: const Color(0xFF00BCD4),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 14)),
+              SliverToBoxAdapter(
+                child: _buildNewReleasesRow(),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 28)),
+            ],
+
+            // Mood-Based Section (time-of-day aware)
+            if (_moodSongs.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: HomeSectionHeader(
+                  title: _moodLabel,
+                  icon: _moodIcon,
+                  accentColor: _moodColor,
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 14)),
+              SliverToBoxAdapter(
+                child: _buildMoodSongsRow(),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 28)),
+            ],
 
             // Liked Songs Section
             SliverToBoxAdapter(
@@ -289,6 +374,78 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (context, index) {
           final song = songs[index];
+          return HorizontalSongCard(
+            song: song,
+            onTap: () => widget.onPlaySong(song),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPersonalizedSongsRow() {
+    if (_personalizedSongs.isEmpty) {
+      return _buildEmptyState('No personalized songs yet', icon: Icons.auto_awesome);
+    }
+
+    return SizedBox(
+      height: 190,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _personalizedSongs.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (context, index) {
+          final song = _personalizedSongs[index];
+          return HorizontalSongCard(
+            song: song,
+            onTap: () => widget.onPlaySong(song),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNewReleasesRow() {
+    if (_newReleases.isEmpty) {
+      return _buildEmptyState('No new releases');
+    }
+
+    return SizedBox(
+      height: 190,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _newReleases.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (context, index) {
+          final song = _newReleases[index];
+          return HorizontalSongCard(
+            song: song,
+            onTap: () => widget.onPlaySong(song),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMoodSongsRow() {
+    if (_moodSongs.isEmpty) {
+      return _buildEmptyState('No mood songs');
+    }
+
+    return SizedBox(
+      height: 190,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _moodSongs.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (context, index) {
+          final song = _moodSongs[index];
           return HorizontalSongCard(
             song: song,
             onTap: () => widget.onPlaySong(song),
@@ -423,6 +580,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           onPlay: widget.onPlaySong,
           surfaceColor: kBackgroundColor,
           softWhite: const Color(0xFFF5F5F5),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToTrendingAlbums() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TrendingAlbumsPage(
+          trendingAlbums: _trendingAlbums,
+          musicService: _musicService,
+          onPlaySong: widget.onPlaySong,
         ),
       ),
     );

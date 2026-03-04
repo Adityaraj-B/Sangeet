@@ -1,11 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sangeet/models/song.dart';
 import 'package:sangeet/models/artist.dart';
+import 'package:sangeet/models/album.dart';
 
-/// Top result card widget with Spotify-style design
-class TopResultCard extends StatelessWidget {
+class TopResultCard extends StatefulWidget {
   final dynamic item;
   final VoidCallback onTap;
 
@@ -16,168 +15,137 @@ class TopResultCard extends StatelessWidget {
   });
 
   @override
+  State<TopResultCard> createState() => _TopResultCardState();
+}
+
+class _TopResultCardState extends State<TopResultCard> {
+  bool _isPressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final isSong = item is Song;
+    final isSong = widget.item is Song;
+    final isArtist = widget.item is Artist;
+    final isAlbum = widget.item is Album;
     final String title;
     final String subtitle;
     final String imageUrl;
     final String typeLabel;
 
     if (isSong) {
-      final song = item as Song;
+      final song = widget.item as Song;
       title = song.title;
       subtitle = song.artist;
       imageUrl = song.coverUrl;
-      typeLabel = 'SONG';
+      typeLabel = 'Song';
+    } else if (isAlbum) {
+      final album = widget.item as Album;
+      title = album.name;
+      subtitle = album.artist;
+      imageUrl = album.coverUrl;
+      typeLabel = 'Album';
     } else {
-      final artist = item as Artist;
+      final artist = widget.item as Artist;
       title = artist.name;
       subtitle = 'Artist';
       imageUrl = artist.imageUrl;
-      typeLabel = 'ARTIST';
+      typeLabel = 'Artist';
     }
 
     return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
       onTap: () {
         HapticFeedback.mediumImpact();
-        onTap();
+        widget.onTap();
       },
-      child: Container(
-        height: 140,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.12),
-              Colors.white.withValues(alpha: 0.04),
-            ],
+      child: AnimatedScale(
+        scale: _isPressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1E),
+            borderRadius: BorderRadius.circular(16),
           ),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.1),
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
+          child: Row(
             children: [
-              // Background blur effect
-              if (imageUrl.isNotEmpty)
-                Positioned.fill(
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      color: Colors.black.withValues(alpha: 0.5),
-                      colorBlendMode: BlendMode.darken,
-                      errorBuilder: (_, __, ___) => const SizedBox(),
-                    ),
-                  ),
+              // Artwork
+              ClipRRect(
+                borderRadius: BorderRadius.circular(isArtist ? 48 : 10),
+                child: SizedBox(
+                  width: 88,
+                  height: 88,
+                  child: imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stack) => _placeholder(isSong, isAlbum),
+                        )
+                      : _placeholder(isSong, isAlbum),
                 ),
-              // Content
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+              ),
+              const SizedBox(width: 16),
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Image
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(isSong ? 12 : 50),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(isSong ? 12 : 50),
-                        child: imageUrl.isNotEmpty
-                            ? Image.network(
-                                imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _placeholder(isSong),
-                              )
-                            : _placeholder(isSong),
+                    Text(
+                      typeLabel.toUpperCase(),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.2,
                       ),
                     ),
-                    const SizedBox(width: 20),
-                    // Info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  typeLabel,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.9),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  subtitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                    const SizedBox(height: 6),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: -0.4,
                       ),
                     ),
-                    // Play button for songs
-                    if (isSong)
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.play_arrow_rounded,
-                          color: Colors.black,
-                          size: 28,
-                        ),
+                    const SizedBox(height: 5),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
                       ),
+                    ),
                   ],
                 ),
               ),
+              // Play button for songs/albums
+              if (isSong || isAlbum) ...[
+                const SizedBox(width: 12),
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.black,
+                    size: 24,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -185,14 +153,16 @@ class TopResultCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(bool isSong) {
+  Widget _placeholder(bool isSong, bool isAlbum) {
     return Container(
-      color: const Color(0xFF1A1A1A),
+      color: const Color(0xFF252528),
       child: Center(
         child: Icon(
-          isSong ? Icons.music_note_rounded : Icons.person_rounded,
-          color: Colors.white.withValues(alpha: 0.2),
-          size: 40,
+          isSong
+              ? Icons.music_note_rounded
+              : (isAlbum ? Icons.album_rounded : Icons.person_rounded),
+          color: Colors.white.withValues(alpha: 0.15),
+          size: 32,
         ),
       ),
     );
