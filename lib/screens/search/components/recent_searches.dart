@@ -18,53 +18,54 @@ class RecentSearches extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (recent.isEmpty || isSearching) {
-      return const SizedBox.shrink();
-    }
+    if (recent.isEmpty || isSearching) return const SizedBox.shrink();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              'Recent searches',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            GestureDetector(
-              onTap: onClear,
-              child: Text(
-                'CLEAR',
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Recent searches',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.4,
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: recent
-              .map(
-                (r) => GlassChip(
-                  label: r,
-                  onTap: () => onRecentTap(r),
-                  isSuggestion: false,
+              const Spacer(),
+              GestureDetector(
+                onTap: onClear,
+                child: Text(
+                  'Clear',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              )
-              .toList(),
-        ),
-      ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: recent
+                .map(
+                  (r) => GlassChip(
+                    label: r,
+                    onTap: () => onRecentTap(r),
+                    isSuggestion: false,
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
     );
   }
 }

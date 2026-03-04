@@ -5,6 +5,9 @@ class Song {
   final String coverUrl;
   final Duration duration;
   final String? streamUrl;
+  final int? playCount;
+  final String? language;
+  final String? year;
 
   const Song({
     required this.id,
@@ -13,8 +16,11 @@ class Song {
     required this.coverUrl,
     required this.duration,
     this.streamUrl,
+    this.playCount,
+    this.language,
+    this.year,
   });
-  // Add copyWith method for creating new instances with updated fields
+
   Song copyWith({
     String? id,
     String? title,
@@ -22,6 +28,9 @@ class Song {
     String? coverUrl,
     Duration? duration,
     String? streamUrl,
+    int? playCount,
+    String? language,
+    String? year,
   }) {
     return Song(
       id: id ?? this.id,
@@ -30,10 +39,12 @@ class Song {
       coverUrl: coverUrl ?? this.coverUrl,
       duration: duration ?? this.duration,
       streamUrl: streamUrl ?? this.streamUrl,
+      playCount: playCount ?? this.playCount,
+      language: language ?? this.language,
+      year: year ?? this.year,
     );
   }
 
-  // Add these methods to Song class
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -42,6 +53,9 @@ class Song {
       'coverUrl': coverUrl,
       'duration': duration.inSeconds,
       'streamUrl': streamUrl,
+      'playCount': playCount,
+      'language': language,
+      'year': year,
     };
   }
 
@@ -51,8 +65,11 @@ class Song {
       title: json['title'],
       artist: json['artist'],
       coverUrl: json['coverUrl'],
-      duration: Duration(seconds: json['duration']),
+      duration: Duration(seconds: json['duration'] ?? 0),
       streamUrl: json['streamUrl'],
+      playCount: json['playCount'],
+      language: json['language'],
+      year: json['year'],
     );
   }
   

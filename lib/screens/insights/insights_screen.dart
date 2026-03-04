@@ -35,6 +35,10 @@ class _InsightsScreenState extends State<InsightsScreen>
   String _mostActiveDay = '';
   String _peakListeningTime = '';
   int _currentStreak = 0;
+  String _topGenreName = '';
+  String _avgSongLength = '';
+  int _uniqueArtistCount = 0;
+  String _listeningMood = '';
 
   @override
   void initState() {
@@ -74,7 +78,6 @@ class _InsightsScreenState extends State<InsightsScreen>
     // for that song and compute a strict last-7-days window.
     final recentWithTime =
         await _recentService.getRecentWithTimestamps(limit: 100);
-    final recentSongs = await _recentService.getRecentlyPlayed(limit: 50);
 
     final now = DateTime.now();
     final windowStart = now.subtract(const Duration(days: 7));
@@ -158,9 +161,9 @@ class _InsightsScreenState extends State<InsightsScreen>
         return a.toLowerCase().compareTo(b.toLowerCase());
       });
 
-    // Generate genre stats based on (filtered) songs and listening patterns.
-    // Keep existing heuristic, but feed it the same window for consistency.
-    final genres = _generateGenreStats(recentSongs, artistPlayCount);
+    // Generate genre stats based on the filtered window songs for accuracy.
+    final filteredSongs = filtered.map((item) => item['song'] as Song).toList();
+    final genres = _generateGenreStats(filteredSongs, artistPlayCount);
 
     // Peak listening hour: max seconds, tiebreak by most recent play.
     final peakHour = _maxKeyBy(
@@ -178,10 +181,6 @@ class _InsightsScreenState extends State<InsightsScreen>
     // Calculate listening streak from normalized unique days in the window.
     final streak = _calculateListeningStreak(playDates);
 
-    // Average per day is computed from the same 7-day window.
-    final avgPerDay = uniqueDates.isNotEmpty ? filtered.length / uniqueDates.length : 0.0;
-    (avgPerDay); // keep for potential future UI; intentionally unused now.
-
     final dayNames = [
       '',
       'Monday',
@@ -194,12 +193,21 @@ class _InsightsScreenState extends State<InsightsScreen>
     ];
 
     if (mounted) {
-      setState(() {
-        // Use floor minutes to avoid inflating totals (more "spot on").
-        _totalListeningMinutes = (totalListeningSeconds ~/ 60);
+      // Compute extra insight values outside setState for clarity
+      final topGenre = genres.isNotEmpty ? genres.first.name : '';
+      final uniqueArtists = artistPlayCount.keys.length;
+      final avgSeconds = filtered.isNotEmpty
+          ? (totalListeningSeconds / filtered.length).round()
+          : 0;
+      final avgMin = avgSeconds ~/ 60;
+      final avgSec = avgSeconds % 60;
+      final avgLenStr = '${avgMin}m ${avgSec}s';
 
-        // Note: due to de-duping in storage this represents unique songs
-        // played in the last 7 days.
+      // Derive a listening mood from the peak hour
+      final mood = _deriveMood(peakHour ?? 12, topGenre);
+
+      setState(() {
+        _totalListeningMinutes = (totalListeningSeconds ~/ 60);
         _totalSongsPlayed = filtered.length;
         _likedSongsCount = _likeService.likedSongs.length;
 
@@ -215,8 +223,6 @@ class _InsightsScreenState extends State<InsightsScreen>
 
         _topGenres = genres;
 
-        // Convert seconds distributions back to an int scale for the existing chart.
-        // We store minutes here to keep values smaller and more stable.
         _listeningByHour = hourlyListeningSeconds
             .map((k, v) => MapEntry(k, (v / 60).round()));
         _listeningByDay = dailyListeningSeconds
@@ -225,6 +231,11 @@ class _InsightsScreenState extends State<InsightsScreen>
         _mostActiveDay = dayNames[(activeDay ?? 1).clamp(1, 7)];
         _peakListeningTime = _formatHour(peakHour ?? 0);
         _currentStreak = streak;
+
+        _topGenreName = topGenre;
+        _avgSongLength = avgLenStr;
+        _uniqueArtistCount = uniqueArtists;
+        _listeningMood = mood;
       });
     }
   }
@@ -320,98 +331,442 @@ class _InsightsScreenState extends State<InsightsScreen>
     return '${hour - 12} PM';
   }
 
-  List<GenreStats> _generateGenreStats(List<Song> songs, Map<String, int> artistPlayCount) {
-    // Genre inference based on artist names and listening patterns
-    // This provides a more realistic distribution based on actual data
+  /// Derive a human-readable listening mood from peak hour + top genre.
+  String _deriveMood(int peakHour, String topGenre) {
+    // Time-based mood
+    String timeMood;
+    if (peakHour >= 5 && peakHour < 9) {
+      timeMood = 'Early Bird 🌅';
+    } else if (peakHour >= 9 && peakHour < 12) {
+      timeMood = 'Morning Vibes ☀️';
+    } else if (peakHour >= 12 && peakHour < 15) {
+      timeMood = 'Afternoon Flow 🎶';
+    } else if (peakHour >= 15 && peakHour < 18) {
+      timeMood = 'Evening Chill 🌤️';
+    } else if (peakHour >= 18 && peakHour < 21) {
+      timeMood = 'Night Owl 🌙';
+    } else if (peakHour >= 21 || peakHour < 1) {
+      timeMood = 'Late Night 🌃';
+    } else {
+      timeMood = 'After Hours 🌌';
+    }
 
-    if (songs.isEmpty || artistPlayCount.isEmpty) {
+    // Genre can refine the mood
+    final gl = topGenre.toLowerCase();
+    if (gl == 'romantic' || gl == 'lofi') return 'Soulful $timeMood';
+    if (gl == 'hip-hop') return 'High Energy 🔥';
+    if (gl == 'electronic') return 'Party Mode 🎧';
+    if (gl == 'classical') return 'Peaceful $timeMood';
+    if (gl == 'rock') return 'Headbanger 🤘';
+    if (gl == 'indie') return 'Chill Explorer 🎸';
+
+    return timeMood;
+  }
+
+  // ── Comprehensive artist → genre mapping ──────────────────────────
+  // Covers Bollywood, Indie, Punjabi, Hip-Hop/Rap, International Pop,
+  // R&B, Rock, Electronic, Classical, Lofi, and more.
+  static const Map<String, List<String>> _artistGenreMap = {
+    // ── Bollywood / Romantic ──
+    'arijit singh':        ['Romantic', 'Bollywood'],
+    'shreya ghoshal':      ['Bollywood', 'Romantic'],
+    'atif aslam':          ['Romantic', 'Bollywood'],
+    'neha kakkar':         ['Bollywood', 'Pop'],
+    'jubin nautiyal':      ['Romantic', 'Bollywood'],
+    'vishal mishra':       ['Romantic', 'Bollywood'],
+    'sachet tandon':       ['Romantic', 'Bollywood'],
+    'b praak':             ['Romantic', 'Punjabi'],
+    'darshan raval':       ['Romantic', 'Indie'],
+    'armaan malik':        ['Romantic', 'Pop'],
+    'pritam':              ['Bollywood'],
+    'a.r. rahman':         ['Bollywood', 'Classical'],
+    'sonu nigam':          ['Bollywood', 'Romantic'],
+    'kumar sanu':          ['Bollywood', 'Romantic'],
+    'udit narayan':        ['Bollywood', 'Romantic'],
+    'alka yagnik':         ['Bollywood', 'Romantic'],
+    'lata mangeshkar':     ['Bollywood', 'Classical'],
+    'kishore kumar':       ['Bollywood', 'Romantic'],
+    'mohd rafi':           ['Bollywood', 'Classical'],
+    'mohammed rafi':       ['Bollywood', 'Classical'],
+    'mukesh':              ['Bollywood', 'Classical'],
+    'shankar mahadevan':   ['Bollywood'],
+    'shankar-ehsaan-loy':  ['Bollywood'],
+    'vishal-shekhar':      ['Bollywood', 'Pop'],
+    'salim-sulaiman':      ['Bollywood'],
+    'amit trivedi':        ['Bollywood', 'Indie'],
+    'mithoon':             ['Romantic', 'Bollywood'],
+    'himesh reshammiya':   ['Bollywood', 'Pop'],
+    'ankit tiwari':        ['Romantic', 'Bollywood'],
+    'palak muchhal':       ['Romantic', 'Bollywood'],
+    'tulsi kumar':         ['Romantic', 'Bollywood'],
+    'stebin ben':          ['Romantic', 'Bollywood'],
+    'papon':               ['Indie', 'Romantic'],
+    'mohit chauhan':       ['Bollywood', 'Romantic'],
+    'kk':                  ['Bollywood', 'Romantic'],
+    'rahat fateh ali khan': ['Romantic', 'Bollywood'],
+    'sunidhi chauhan':     ['Bollywood', 'Pop'],
+    'monali thakur':       ['Bollywood', 'Romantic'],
+    'ash king':            ['Bollywood', 'Pop'],
+    'shaan':               ['Bollywood', 'Romantic'],
+    'mika singh':          ['Bollywood', 'Punjabi'],
+    'guru randhawa':       ['Punjabi', 'Pop'],
+    'harrdy sandhu':       ['Punjabi', 'Pop'],
+    'jasleen royal':       ['Indie', 'Bollywood'],
+    'sachin-jigar':        ['Bollywood', 'Pop'],
+    'tanishk bagchi':      ['Bollywood', 'Pop'],
+    'irshad kamil':        ['Bollywood'],
+    'amaal mallik':        ['Bollywood', 'Romantic'],
+    'javed ali':           ['Bollywood', 'Romantic'],
+    'sukhwinder singh':    ['Bollywood'],
+    'benny dayal':         ['Bollywood', 'Pop'],
+    'jonita gandhi':       ['Bollywood', 'Pop'],
+    'asees kaur':          ['Romantic', 'Bollywood'],
+    'dev negi':            ['Bollywood', 'Pop'],
+    'nikhita gandhi':      ['Bollywood', 'Pop'],
+
+    // ── Indie / Lofi / Chill ──
+    'anuv jain':           ['Indie', 'Romantic'],
+    'prateek kuhad':       ['Indie', 'Romantic'],
+    'when chai met toast': ['Indie'],
+    'the local train':     ['Indie', 'Rock'],
+    'ritviz':              ['Electronic', 'Indie'],
+    'zaeden':              ['Indie', 'Pop'],
+    'ankur tewari':        ['Indie'],
+    'lucky ali':           ['Indie', 'Romantic'],
+    'euphoria':            ['Indie', 'Rock'],
+    'indian ocean':        ['Indie', 'Rock'],
+    'parvaaz':             ['Indie', 'Rock'],
+    'taba chake':          ['Indie', 'Romantic'],
+    'osho jain':           ['Indie', 'Lofi'],
+    'hanita bhambri':      ['Indie', 'Romantic'],
+    'lifafa':              ['Indie', 'Electronic'],
+    'seedhe maut':         ['Hip-Hop', 'Indie'],
+    'seedhe maut ki duniya': ['Hip-Hop', 'Indie'],
+    'talwiinder':          ['R&B', 'Indie'],
+
+    // ── Punjabi ──
+    'ap dhillon':          ['Punjabi', 'Hip-Hop'],
+    'diljit dosanjh':      ['Punjabi', 'Bollywood'],
+    'sidhu moose wala':    ['Punjabi', 'Hip-Hop'],
+    'karan aujla':         ['Punjabi', 'Hip-Hop'],
+    'shubh':               ['Punjabi', 'Hip-Hop'],
+    'jassie gill':         ['Punjabi', 'Romantic'],
+    'amrinder gill':       ['Punjabi', 'Romantic'],
+    'garry sandhu':        ['Punjabi', 'Pop'],
+    'ammy virk':           ['Punjabi', 'Romantic'],
+    'babbu maan':          ['Punjabi'],
+    'gurdas maan':         ['Punjabi', 'Classical'],
+    'jazzy b':             ['Punjabi', 'Hip-Hop'],
+    'bohemia':             ['Punjabi', 'Hip-Hop'],
+    'parmish verma':       ['Punjabi', 'Hip-Hop'],
+    'mankirt aulakh':      ['Punjabi'],
+    'singga':              ['Punjabi', 'Hip-Hop'],
+    'nimrat khaira':       ['Punjabi', 'Romantic'],
+    'sharry maan':         ['Punjabi', 'Romantic'],
+    'r nait':              ['Punjabi', 'Hip-Hop'],
+    'jordan sandhu':       ['Punjabi'],
+    'deep kalsi':          ['Punjabi', 'Hip-Hop'],
+
+    // ── Hip-Hop / Rap (Indian) ──
+    'badshah':             ['Hip-Hop', 'Bollywood'],
+    'yo yo honey singh':   ['Hip-Hop', 'Punjabi'],
+    'honey singh':         ['Hip-Hop', 'Punjabi'],
+    'raftaar':             ['Hip-Hop'],
+    'divine':              ['Hip-Hop'],
+    'emiway bantai':       ['Hip-Hop'],
+    'emiway':              ['Hip-Hop'],
+    'ikka':                ['Hip-Hop'],
+    'kr\$na':               ['Hip-Hop'],
+    'krsna':               ['Hip-Hop'],
+    'mc stan':             ['Hip-Hop'],
+    'king':                ['Hip-Hop', 'Pop'],
+    'dino james':          ['Hip-Hop'],
+    'fotty seven':         ['Hip-Hop'],
+    'muhfaad':             ['Hip-Hop'],
+    'brodha v':            ['Hip-Hop'],
+    'naezy':               ['Hip-Hop'],
+    'prabh deep':          ['Hip-Hop', 'Indie'],
+    'slowcheeta':          ['Hip-Hop', 'Indie'],
+    'karma':               ['Hip-Hop'],
+    'bella':               ['Hip-Hop'],
+    'young stunners':      ['Hip-Hop'],
+    'talha anjum':         ['Hip-Hop'],
+    'talha yunus':         ['Hip-Hop'],
+
+    // ── International Pop ──
+    'taylor swift':        ['Pop'],
+    'ed sheeran':          ['Pop', 'Romantic'],
+    'dua lipa':            ['Pop', 'Electronic'],
+    'bruno mars':          ['Pop', 'R&B'],
+    'billie eilish':       ['Pop', 'Indie'],
+    'ariana grande':       ['Pop', 'R&B'],
+    'justin bieber':       ['Pop'],
+    'shawn mendes':        ['Pop', 'Romantic'],
+    'selena gomez':        ['Pop'],
+    'harry styles':        ['Pop', 'Rock'],
+    'olivia rodrigo':      ['Pop', 'Rock'],
+    'charlie puth':        ['Pop', 'R&B'],
+    'sia':                 ['Pop'],
+    'adele':               ['Pop', 'Romantic'],
+    'sam smith':           ['Pop', 'R&B'],
+    'lewis capaldi':       ['Pop', 'Romantic'],
+    'lana del rey':        ['Pop', 'Indie'],
+    'halsey':              ['Pop', 'Indie'],
+    'camila cabello':      ['Pop', 'Romantic'],
+    'bts':                 ['K-Pop', 'Pop'],
+    'blackpink':           ['K-Pop', 'Pop'],
+    'lady gaga':           ['Pop', 'Electronic'],
+    'rihanna':             ['Pop', 'R&B'],
+    'katy perry':          ['Pop'],
+    'shakira':             ['Pop'],
+    'doja cat':            ['Pop', 'Hip-Hop'],
+    'lizzo':               ['Pop', 'R&B'],
+    'miley cyrus':         ['Pop', 'Rock'],
+    'sabrina carpenter':   ['Pop'],
+    'tate mcrae':          ['Pop'],
+    'chappell roan':       ['Pop', 'Indie'],
+
+    // ── International Hip-Hop / Rap ──
+    'drake':               ['Hip-Hop', 'R&B'],
+    'the weeknd':          ['R&B', 'Pop'],
+    'travis scott':        ['Hip-Hop'],
+    'post malone':         ['Hip-Hop', 'Pop'],
+    'kanye west':          ['Hip-Hop'],
+    'ye':                  ['Hip-Hop'],
+    'eminem':              ['Hip-Hop'],
+    'kendrick lamar':      ['Hip-Hop'],
+    'j. cole':             ['Hip-Hop'],
+    'lil uzi vert':        ['Hip-Hop'],
+    'lil baby':            ['Hip-Hop'],
+    'lil nas x':           ['Hip-Hop', 'Pop'],
+    'jack harlow':         ['Hip-Hop'],
+    '21 savage':           ['Hip-Hop'],
+    'metro boomin':        ['Hip-Hop'],
+    'future':              ['Hip-Hop'],
+    'megan thee stallion':['Hip-Hop'],
+    'nicki minaj':         ['Hip-Hop', 'Pop'],
+    'cardi b':             ['Hip-Hop'],
+    'tyler, the creator':  ['Hip-Hop', 'Indie'],
+    'a\$ap rocky':          ['Hip-Hop'],
+    'juice wrld':          ['Hip-Hop', 'Pop'],
+    'xxxtentacion':        ['Hip-Hop'],
+    'kid cudi':            ['Hip-Hop', 'Indie'],
+    'mac miller':          ['Hip-Hop', 'Indie'],
+    'sza':                 ['R&B'],
+
+    // ── R&B / Soul ──
+    'daniel caesar':       ['R&B', 'Romantic'],
+    'frank ocean':         ['R&B', 'Indie'],
+    'khalid':              ['R&B', 'Pop'],
+    'h.e.r.':              ['R&B'],
+    'jorja smith':         ['R&B'],
+    'summer walker':       ['R&B'],
+    'brent faiyaz':        ['R&B'],
+    'giveon':              ['R&B', 'Romantic'],
+
+    // ── Rock / Alternative ──
+    'coldplay':            ['Rock', 'Pop'],
+    'imagine dragons':     ['Rock', 'Pop'],
+    'one republic':        ['Rock', 'Pop'],
+    'onerepublic':         ['Rock', 'Pop'],
+    'maroon 5':            ['Pop', 'Rock'],
+    'linkin park':         ['Rock'],
+    'arctic monkeys':      ['Rock', 'Indie'],
+    'the neighbourhood':   ['Indie', 'Rock'],
+    'hozier':              ['Indie', 'Rock'],
+    'twenty one pilots':   ['Rock', 'Pop'],
+    'fall out boy':        ['Rock'],
+    'green day':           ['Rock'],
+    'foo fighters':        ['Rock'],
+    'radiohead':           ['Rock', 'Indie'],
+    'tame impala':         ['Indie', 'Rock'],
+    'the 1975':            ['Indie', 'Pop'],
+    'glass animals':       ['Indie', 'Electronic'],
+    'bon iver':            ['Indie'],
+
+    // ── Electronic / EDM ──
+    'martin garrix':       ['Electronic'],
+    'marshmello':          ['Electronic', 'Pop'],
+    'alan walker':         ['Electronic'],
+    'avicii':              ['Electronic'],
+    'kygo':                ['Electronic', 'Pop'],
+    'david guetta':        ['Electronic'],
+    'calvin harris':       ['Electronic', 'Pop'],
+    'tiësto':              ['Electronic'],
+    'deadmau5':            ['Electronic'],
+    'skrillex':            ['Electronic'],
+    'zedd':                ['Electronic', 'Pop'],
+    'chainsmokers':        ['Electronic', 'Pop'],
+    'the chainsmokers':    ['Electronic', 'Pop'],
+    'nucleya':             ['Electronic'],
+    'lost stories':        ['Electronic'],
+
+    // ── Classical / Devotional ──
+    'pandit ravi shankar': ['Classical'],
+    'zakir hussain':       ['Classical'],
+    'ustad bismillah khan':['Classical'],
+    'hariprasad chaurasia':['Classical'],
+    'jagjit singh':        ['Classical', 'Romantic'],
+    'ghulam ali':          ['Classical'],
+    'nusrat fateh ali khan':['Classical', 'Romantic'],
+  };
+
+  // ── Song title keywords → genre hints ─────────────────────────────
+  static const Map<String, String> _titleGenreKeywords = {
+    'love':       'Romantic',
+    'pyaar':      'Romantic',
+    'ishq':       'Romantic',
+    'dil':        'Romantic',
+    'tere':       'Romantic',
+    'tera':       'Romantic',
+    'tum':        'Romantic',
+    'sanam':      'Romantic',
+    'romantic':   'Romantic',
+    'mehboob':    'Romantic',
+    'sajan':      'Romantic',
+    'party':      'Pop',
+    'dance':      'Pop',
+    'nachle':     'Bollywood',
+    'naach':      'Bollywood',
+    'rap':        'Hip-Hop',
+    'hustle':     'Hip-Hop',
+    'diss':       'Hip-Hop',
+    'drill':      'Hip-Hop',
+    'lofi':       'Lofi',
+    'lo-fi':      'Lofi',
+    'chill':      'Lofi',
+    'unplugged':  'Indie',
+    'acoustic':   'Indie',
+    'bhajan':     'Classical',
+    'devotional': 'Classical',
+    'qawwali':    'Classical',
+    'ghazal':     'Classical',
+    'sufi':       'Classical',
+    'remix':      'Electronic',
+    'edm':        'Electronic',
+    'bass':       'Electronic',
+    'sad':        'Romantic',
+    'breakup':    'Romantic',
+    'heartbreak': 'Romantic',
+    'mashup':     'Bollywood',
+    'punjabi':    'Punjabi',
+    'jatt':       'Punjabi',
+    'gabru':      'Punjabi',
+    'bhangra':    'Punjabi',
+  };
+
+  List<GenreStats> _generateGenreStats(List<Song> songs, Map<String, int> artistPlayCount) {
+    if (songs.isEmpty && artistPlayCount.isEmpty) {
       return [
         GenreStats(name: 'No Data', percentage: 100, color: Colors.grey),
       ];
     }
 
-    // Common genre keywords that might appear in artist names or can be inferred
-    final Map<String, int> genreCounts = {};
     final genreColors = {
-      'Pop': const Color(0xFFFF6B8A),
-      'Hip-Hop': const Color(0xFF6B8AFF),
-      'R&B': const Color(0xFF8AFF6B),
-      'Electronic': const Color(0xFFFFB86B),
-      'Rock': const Color(0xFFB86BFF),
-      'Indie': const Color(0xFF6BFFFF),
-      'Classical': const Color(0xFFFF6BFF),
-      'Jazz': const Color(0xFFFFFF6B),
-      'Other': const Color(0xFF9E9E9E),
+      'Bollywood':  const Color(0xFFFF6B8A),
+      'Romantic':   const Color(0xFFFF8AAE),
+      'Pop':        const Color(0xFFFF9E6B),
+      'Hip-Hop':    const Color(0xFF6B8AFF),
+      'Punjabi':    const Color(0xFFFFB86B),
+      'Indie':      const Color(0xFF6BFFCF),
+      'R&B':        const Color(0xFF8AFF6B),
+      'Electronic': const Color(0xFFB86BFF),
+      'Rock':       const Color(0xFFFF6BFF),
+      'Lofi':       const Color(0xFF6BDFFF),
+      'Classical':  const Color(0xFFFFFF6B),
+      'K-Pop':      const Color(0xFFFF6BD5),
+      'Other':      const Color(0xFF9E9E9E),
     };
 
-    // Analyze each song/artist to infer genre
-    int totalPlays = 0;
-    for (var entry in artistPlayCount.entries) {
-      final artist = entry.key.toLowerCase();
+    // Weight genre by listening seconds (from artist play counts * avg duration)
+    // and also use per-song analysis for more granularity.
+    final Map<String, double> genreWeights = {};
+
+    // Build a quick song lookup by artist for title/language analysis
+    final Map<String, List<Song>> songsByArtist = {};
+    for (final song in songs) {
+      songsByArtist.putIfAbsent(song.artist, () => []).add(song);
+    }
+
+    for (final entry in artistPlayCount.entries) {
+      final artistName = entry.key;
       final plays = entry.value;
-      totalPlays += plays;
+      final artistLower = artistName.toLowerCase().trim();
 
-      // Simple genre inference based on patterns
-      // In a real app, this would use actual genre metadata
-      String inferredGenre = 'Other';
+      // 1) Try known artist mapping (check full name and each sub-artist)
+      List<String>? knownGenres = _artistGenreMap[artistLower];
 
-      // Check for common genre indicators in artist name
-      if (artist.contains('dj') || artist.contains('electronic') ||
-          artist.contains('edm') || artist.contains('remix')) {
-        inferredGenre = 'Electronic';
-      } else if (artist.contains('rap') || artist.contains('hip') ||
-                 artist.contains('hop') || artist.contains('lil ')) {
-        inferredGenre = 'Hip-Hop';
-      } else if (artist.contains('rock') || artist.contains('metal') ||
-                 artist.contains('punk')) {
-        inferredGenre = 'Rock';
-      } else if (artist.contains('jazz') || artist.contains('blues')) {
-        inferredGenre = 'Jazz';
-      } else if (artist.contains('classical') || artist.contains('orchestra') ||
-                 artist.contains('symphony')) {
-        inferredGenre = 'Classical';
-      } else if (artist.contains('indie') || artist.contains('alternative')) {
-        inferredGenre = 'Indie';
-      } else if (artist.contains('r&b') || artist.contains('soul') ||
-                 artist.contains('rnb')) {
-        inferredGenre = 'R&B';
-      } else {
-        // Default distribution based on listening diversity
-        // Spread across popular genres weighted by artist variety
-        final artistCount = artistPlayCount.keys.length;
-        if (artistCount > 5) {
-          inferredGenre = 'Pop'; // Diverse listening often includes pop
-        } else if (artistCount > 2) {
-          inferredGenre = 'Pop';
-        } else {
-          inferredGenre = 'Other';
+      // Handle "Artist1, Artist2" format — try each part
+      if (knownGenres == null && artistLower.contains(',')) {
+        final parts = artistLower.split(',').map((s) => s.trim());
+        for (final part in parts) {
+          knownGenres = _artistGenreMap[part];
+          if (knownGenres != null) break;
         }
       }
 
-      genreCounts[inferredGenre] = (genreCounts[inferredGenre] ?? 0) + plays;
+      // Also try partial match for names like "Arijit Singh, Shreya Ghoshal"
+      if (knownGenres == null) {
+        for (final mapEntry in _artistGenreMap.entries) {
+          if (artistLower.contains(mapEntry.key) ||
+              mapEntry.key.contains(artistLower)) {
+            knownGenres = mapEntry.value;
+            break;
+          }
+        }
+      }
+
+      if (knownGenres != null && knownGenres.isNotEmpty) {
+        // Distribute weight: primary genre gets 60%, secondary gets 40%
+        final primary = knownGenres[0];
+        genreWeights[primary] =
+            (genreWeights[primary] ?? 0) + plays * 0.6;
+        if (knownGenres.length > 1) {
+          final secondary = knownGenres[1];
+          genreWeights[secondary] =
+              (genreWeights[secondary] ?? 0) + plays * 0.4;
+        } else {
+          genreWeights[primary] =
+              (genreWeights[primary] ?? 0) + plays * 0.4;
+        }
+      } else {
+        // 2) Fallback: analyse song titles + language for this artist
+        final artistSongs = songsByArtist[artistName] ?? [];
+        String fallbackGenre = _inferGenreFromSongs(artistSongs, artistLower);
+        genreWeights[fallbackGenre] =
+            (genreWeights[fallbackGenre] ?? 0) + plays.toDouble();
+      }
     }
 
-    // Convert counts to percentages and sort
+    if (genreWeights.isEmpty) {
+      return [
+        GenreStats(name: 'No Data', percentage: 100, color: Colors.grey),
+      ];
+    }
+
+    // Convert weights to percentages
+    final totalWeight = genreWeights.values.fold(0.0, (a, b) => a + b);
     final List<GenreStats> genres = [];
-    for (var entry in genreCounts.entries) {
-      final percentage = totalPlays > 0
-          ? ((entry.value / totalPlays) * 100).round()
+
+    for (final entry in genreWeights.entries) {
+      final pct = totalWeight > 0
+          ? ((entry.value / totalWeight) * 100).round()
           : 0;
-      if (percentage > 0) {
+      if (pct > 0) {
         genres.add(GenreStats(
           name: entry.key,
-          percentage: percentage,
-          color: genreColors[entry.key] ?? Colors.grey,
+          percentage: pct,
+          color: genreColors[entry.key] ?? const Color(0xFF9E9E9E),
         ));
       }
     }
 
-    // Sort by percentage descending
+    // Sort descending
     genres.sort((a, b) => b.percentage.compareTo(a.percentage));
 
-    // Ensure percentages sum to 100 (adjust largest if needed)
+    // Normalise so percentages sum to exactly 100
     if (genres.isNotEmpty) {
-      final sum = genres.fold(0, (sum, g) => sum + g.percentage);
+      final sum = genres.fold(0, (s, g) => s + g.percentage);
       if (sum != 100 && sum > 0) {
         final diff = 100 - sum;
         genres[0] = GenreStats(
@@ -422,8 +777,67 @@ class _InsightsScreenState extends State<InsightsScreen>
       }
     }
 
-    // Return top 5 genres
-    return genres.take(5).toList();
+    return genres.take(6).toList();
+  }
+
+  /// Infer genre from song titles, language, and artist name patterns
+  /// when the artist isn't found in the known mapping.
+  String _inferGenreFromSongs(List<Song> songs, String artistLower) {
+    // Check artist name for structural hints first
+    if (artistLower.contains('dj ') || artistLower.startsWith('dj')) {
+      return 'Electronic';
+    }
+    if (artistLower.contains('lil ') || artistLower.startsWith('lil ') ||
+        artistLower.contains('yung ') || artistLower.contains('mc ') ||
+        artistLower.startsWith('mc ')) {
+      return 'Hip-Hop';
+    }
+
+    if (songs.isEmpty) {
+      // No song data at all — use language-neutral fallback
+      return 'Other';
+    }
+
+    // Tally genres from title keywords
+    final Map<String, int> hints = {};
+    for (final song in songs) {
+      final titleLower = song.title.toLowerCase();
+      final lang = (song.language ?? '').toLowerCase();
+
+      // Check title keywords
+      for (final kw in _titleGenreKeywords.entries) {
+        if (titleLower.contains(kw.key)) {
+          hints[kw.value] = (hints[kw.value] ?? 0) + 2;
+        }
+      }
+
+      // Language-based hints
+      if (lang == 'hindi') {
+        hints['Bollywood'] = (hints['Bollywood'] ?? 0) + 1;
+      } else if (lang == 'punjabi') {
+        hints['Punjabi'] = (hints['Punjabi'] ?? 0) + 1;
+      } else if (lang == 'english') {
+        hints['Pop'] = (hints['Pop'] ?? 0) + 1;
+      } else if (lang == 'tamil' || lang == 'telugu' || lang == 'kannada' ||
+                 lang == 'malayalam' || lang == 'bengali' || lang == 'marathi' ||
+                 lang == 'gujarati') {
+        hints['Bollywood'] = (hints['Bollywood'] ?? 0) + 1;
+      }
+    }
+
+    if (hints.isNotEmpty) {
+      final sorted = hints.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return sorted.first.key;
+    }
+
+    // Absolute fallback: check language of first song
+    final lang = (songs.first.language ?? '').toLowerCase();
+    if (lang == 'hindi') return 'Bollywood';
+    if (lang == 'punjabi') return 'Punjabi';
+    if (lang == 'english') return 'Pop';
+
+    return 'Other';
   }
 
   @override
@@ -759,11 +1173,59 @@ class _InsightsScreenState extends State<InsightsScreen>
             ],
           ),
           const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: InsightCard(
+                  icon: Icons.album_rounded,
+                  title: 'Top Genre',
+                  value: _topGenreName.isNotEmpty ? _topGenreName : 'N/A',
+                  subtitle: 'Your favourite',
+                  gradient: const [Color(0xFFFF6B8A), Color(0xFFFF8AAE)],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InsightCard(
+                  icon: Icons.timer_outlined,
+                  title: 'Avg Length',
+                  value: _avgSongLength.isNotEmpty ? _avgSongLength : 'N/A',
+                  subtitle: 'Per song',
+                  gradient: const [Color(0xFF6BFFCF), Color(0xFF6BDFFF)],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: InsightCard(
+                  icon: Icons.people_alt_rounded,
+                  title: 'Artists',
+                  value: '$_uniqueArtistCount',
+                  subtitle: 'Explored this week',
+                  gradient: const [Color(0xFFB86BFF), Color(0xFF6B8AFF)],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InsightCard(
+                  icon: Icons.spa_rounded,
+                  title: 'Mood',
+                  value: _listeningMood.isNotEmpty ? _listeningMood : 'N/A',
+                  subtitle: 'Your vibe',
+                  gradient: const [Color(0xFFFFB86B), Color(0xFFFF6BD5)],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           InsightCard(
             icon: Icons.auto_graph_rounded,
             title: 'Listening Streak',
             value: '${_calculateStreak()} days',
-            subtitle: 'Keep it going! 🔥',
+            subtitle: _currentStreak > 0 ? 'Keep it going! 🔥' : 'Play something today!',
             gradient: const [Color(0xFFFF6B8A), Color(0xFFFF8A6B)],
             isWide: true,
           ),

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sangeet/constants.dart';
 import 'package:sangeet/models/artist.dart';
 import 'package:sangeet/models/song.dart';
@@ -7,6 +8,12 @@ import 'package:sangeet/models/album.dart';
 import 'package:sangeet/services/remote_music_service.dart';
 import 'package:sangeet/components/bottom_player_container.dart';
 import 'package:sangeet/services/audio_player_service.dart';
+import 'package:sangeet/services/queue.dart';
+import 'package:sangeet/screens/player/player_body.dart';
+import 'package:sangeet/screens/artist/components/artist_song_tile.dart';
+import 'package:sangeet/screens/artist/components/artist_album_card.dart';
+import 'components/artist_load_more_button.dart';
+import 'components/liquid_glass_button.dart';
 
 class ArtistScreen extends StatefulWidget {
   final String artistId;
@@ -35,6 +42,7 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
   List<Album> _albums = [];
 
   bool _isTitleVisible = false;
+  double _scrollOffset = 0;
 
   @override
   void initState() {
@@ -45,8 +53,12 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
   }
 
   void _scrollListener() {
-    bool isVisible = _scrollController.hasClients &&
-        _scrollController.offset > (340 - kToolbarHeight);
+    final offset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+    bool isVisible = offset > (380 - kToolbarHeight);
+
+    if (offset != _scrollOffset) {
+      setState(() => _scrollOffset = offset);
+    }
     if (isVisible != _isTitleVisible) {
       setState(() => _isTitleVisible = isVisible);
     }
@@ -100,16 +112,59 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
 
   void _playAll() {
     if (_topSongs.isEmpty) return;
+    HapticFeedback.mediumImpact();
 
     final audio = AudioPlayerService();
 
-    // Match AlbumScreen behavior: clear queue, play first, queue the rest.
+    // IMPORTANT: Clear queue and add remaining songs BEFORE playing
     audio.queue.clearQueue();
-    widget.onPlaySong(_topSongs.first);
-
     if (_topSongs.length > 1) {
       audio.queue.addAllToQueue(_topSongs.sublist(1));
     }
+
+    // Now play the first song
+    widget.onPlaySong(_topSongs.first);
+  }
+
+  void _shufflePlay() {
+    if (_topSongs.isEmpty) return;
+    HapticFeedback.mediumImpact();
+
+    final audio = AudioPlayerService();
+    final shuffled = List<Song>.from(_topSongs)..shuffle();
+
+    // IMPORTANT: Clear queue and add remaining songs BEFORE playing
+    audio.queue.clearQueue();
+    if (shuffled.length > 1) {
+      audio.queue.addAllToQueue(shuffled.sublist(1));
+    }
+
+    // Now play the first song
+    widget.onPlaySong(shuffled.first);
+  }
+
+  void _openPlayerScreen() {
+    final audio = AudioPlayerService();
+    final currentSong = audio.currentSong;
+
+    if (currentSong == null || !mounted) return;
+
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => PlayerScreen(
+          onCollapse: () => Navigator.pop(context),
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          const begin = Offset(0.0, 1.0);
+          const end = Offset.zero;
+          const curve = Curves.easeOutCubic;
+          var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+          var offsetAnimation = animation.drive(tween);
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 350),
+      ),
+    );
   }
 
   @override
@@ -119,10 +174,32 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
 
     return Scaffold(
       backgroundColor: kBackgroundColor,
+      extendBodyBehindAppBar: true,
       body: Stack(
         children: [
+          // Ambient background glow
+          Positioned(
+            top: -100,
+            left: -50,
+            right: -50,
+            child: Container(
+              height: 400,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: [
+                    kAccentColor.withValues(alpha: 0.08),
+                    Colors.transparent,
+                  ],
+                  radius: 1.2,
+                ),
+              ),
+            ),
+          ),
           NestedScrollView(
             controller: _scrollController,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
             headerSliverBuilder: (context, innerBoxIsScrolled) {
               return [
                 _buildSliverAppBar(),
@@ -147,6 +224,7 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
               top: false,
               child: BottomPlayerContainer(
                 backgroundColor: kBackgroundColor,
+                onTap: _openPlayerScreen,
               ),
             ),
           ),
@@ -157,7 +235,7 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
 
   Widget _buildSliverAppBar() {
     return SliverAppBar(
-      expandedHeight: 380,
+      expandedHeight: 420,
       pinned: true,
       stretch: true,
       backgroundColor: kBackgroundColor,
@@ -165,15 +243,22 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
       leading: Container(
         margin: const EdgeInsets.all(8),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.15),
+                    Colors.white.withValues(alpha: 0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withValues(alpha: 0.15),
                   width: 1,
                 ),
               ),
@@ -188,12 +273,26 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
       title: AnimatedOpacity(
         opacity: _isTitleVisible ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 200),
-        child: Text(
-          _artist!.name,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 17,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _artist!.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -202,11 +301,18 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
         background: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(
-              _artist!.imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_,__,___) => Container(color: Colors.grey[900]),
+            // Background Image with blur effect
+            ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Image.network(
+                _artist!.imageUrl,
+                fit: BoxFit.cover,
+                color: Colors.black.withValues(alpha: 0.3),
+                colorBlendMode: BlendMode.darken,
+                errorBuilder: (_,__,___) => Container(color: kBackgroundColor),
+              ),
             ),
+            // Gradient overlays
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -214,70 +320,119 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
                   end: Alignment.bottomCenter,
                   colors: [
                     Colors.black.withValues(alpha: 0.1),
-                    Colors.black.withValues(alpha: 0.3),
+                    Colors.black.withValues(alpha: 0.2),
+                    kBackgroundColor.withValues(alpha: 0.7),
                     kBackgroundColor.withValues(alpha: 0.95),
                     kBackgroundColor,
                   ],
-                  stops: const [0.0, 0.3, 0.85, 1.0],
+                  stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
                 ),
               ),
             ),
+            // Artist content
             Positioned(
               bottom: 24,
-              left: 24,
-              right: 24,
+              left: 0,
+              right: 0,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _artist!.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 36,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                      height: 1.1,
+                  // Artist avatar with glow
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: kAccentColor.withValues(alpha: 0.25),
+                          blurRadius: 40,
+                          spreadRadius: 10,
+                        ),
+                      ],
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    "${_topSongs.length} songs",
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _GlassButton(
-                          onPressed: _playAll,
-                          isPrimary: true,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.play_arrow_rounded, size: 22),
-                              SizedBox(width: 8),
-                              Text(
-                                "Play",
-                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                              ),
-                            ],
+                    child: ClipOval(
+                      child: Container(
+                        width: 140,
+                        height: 140,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            width: 3,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: ClipOval(
+                          child: Image.network(
+                            _artist!.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_,__,___) => Container(
+                              color: Colors.grey[900],
+                              child: Icon(Icons.person, size: 60, color: Colors.white.withValues(alpha: 0.3)),
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      _GlassButton(
-                        onPressed: () {},
-                        isPrimary: false,
-                        child: const Icon(Icons.shuffle_rounded, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Artist name
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      _artist!.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                        height: 1.1,
                       ),
-                    ],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Song count with badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      "${_topSongs.length} songs • ${_albums.length} albums",
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // Action buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        LiquidGlassButton(
+                          onPressed: _shufflePlay,
+                          icon: Icons.shuffle_rounded,
+                          label: 'Shuffle',
+                          isPrimary: false,
+                        ),
+                        const SizedBox(width: 16),
+                        LiquidGlassButton(
+                          onPressed: _playAll,
+                          icon: Icons.play_arrow_rounded,
+                          label: 'Play All',
+                          isPrimary: true,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -295,12 +450,16 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
         TabBar(
           controller: _tabController,
           labelColor: Colors.white,
-          unselectedLabelColor: Colors.white.withValues(alpha: 0.5),
+          unselectedLabelColor: Colors.white.withValues(alpha: 0.4),
           indicatorColor: kAccentColor,
-          indicatorSize: TabBarIndicatorSize.label,
-          indicatorWeight: 2.5,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicatorWeight: 3,
+          indicatorPadding: const EdgeInsets.symmetric(horizontal: 16),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, letterSpacing: 0.3),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
           dividerColor: Colors.transparent,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
           tabs: const [
             Tab(text: "Popular"),
             Tab(text: "Latest"),
@@ -312,66 +471,91 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
   }
 
   Widget _buildLoading() {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: kBackgroundColor,
-      body: Center(child: CircularProgressIndicator(color: kAccentColor)),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    color: kAccentColor,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Loading artist...',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildError() {
     return Scaffold(
       backgroundColor: kBackgroundColor,
-      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
-      body: const Center(child: Text("Could not load artist data", style: TextStyle(color: Colors.white))),
-    );
-  }
-}
-
-// Glass Button Widget
-class _GlassButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final Widget child;
-  final bool isPrimary;
-
-  const _GlassButton({
-    required this.onPressed,
-    required this.child,
-    this.isPrimary = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: isPrimary
-                  ? [kAccentColor, kAccentColor.withValues(alpha: 0.8)]
-                  : [Colors.white.withValues(alpha: 0.15), Colors.white.withValues(alpha: 0.05)],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: isPrimary ? Colors.transparent : Colors.white.withValues(alpha: 0.1),
-              width: 1,
-            ),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(24),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  vertical: 14,
-                  horizontal: isPrimary ? 24 : 20,
-                ),
-                child: child,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                color: Colors.white.withValues(alpha: 0.4),
+                size: 36,
               ),
             ),
-          ),
+            const SizedBox(height: 20),
+            const Text(
+              "Could not load artist",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Please check your connection and try again",
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 14,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -399,6 +583,19 @@ class _PopularSongsTabState extends State<_PopularSongsTab> with AutomaticKeepAl
     setState(() => _displayCount = widget.songs.length);
   }
 
+  void _handleSongTap(Song song, int index) {
+    final queueService = QueueService();
+
+    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    if (index < widget.songs.length - 1) {
+      final remainingSongs = widget.songs.sublist(index + 1);
+      queueService.addAllToQueue(remainingSongs);
+    }
+
+    // Now play the tapped song
+    widget.onPlay(song);
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -418,7 +615,7 @@ class _PopularSongsTabState extends State<_PopularSongsTab> with AutomaticKeepAl
           if (index == displaySongs.length) {
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-              child: _LoadMoreButton(
+              child: ArtistLoadMoreButton(
                 onPressed: _loadMore,
                 text: 'Show ${widget.songs.length - _displayCount} more',
               ),
@@ -428,10 +625,10 @@ class _PopularSongsTabState extends State<_PopularSongsTab> with AutomaticKeepAl
           final song = displaySongs[index];
           final rank = index + 1;
 
-          return _SongTile(
+          return ArtistSongTile(
             song: song,
             rank: rank,
-            onTap: () => widget.onPlay(song),
+            onTap: () => _handleSongTap(song, index),
             showRank: true,
           );
         },
@@ -461,6 +658,19 @@ class _LatestSongsTabState extends State<_LatestSongsTab> with AutomaticKeepAliv
     setState(() => _displayCount = widget.songs.length);
   }
 
+  void _handleSongTap(Song song, int index) {
+    final queueService = QueueService();
+
+    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    if (index < widget.songs.length - 1) {
+      final remainingSongs = widget.songs.sublist(index + 1);
+      queueService.addAllToQueue(remainingSongs);
+    }
+
+    // Now play the tapped song
+    widget.onPlay(song);
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -480,7 +690,7 @@ class _LatestSongsTabState extends State<_LatestSongsTab> with AutomaticKeepAliv
           if (index == displaySongs.length) {
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-              child: _LoadMoreButton(
+              child: ArtistLoadMoreButton(
                 onPressed: _loadMore,
                 text: 'Show ${widget.songs.length - _displayCount} more',
               ),
@@ -488,9 +698,9 @@ class _LatestSongsTabState extends State<_LatestSongsTab> with AutomaticKeepAliv
           }
 
           final song = displaySongs[index];
-          return _SongTile(
+          return ArtistSongTile(
             song: song,
-            onTap: () => widget.onPlay(song),
+            onTap: () => _handleSongTap(song, index),
             showRank: false,
           );
         },
@@ -543,7 +753,7 @@ class _AlbumsTabState extends State<_AlbumsTab> with AutomaticKeepAliveClientMix
                 mainAxisSpacing: 20,
               ),
               delegate: SliverChildBuilderDelegate(
-                    (context, index) => _AlbumCard(album: displayAlbums[index]),
+                    (context, index) => ArtistAlbumCard(album: displayAlbums[index]),
                 childCount: displayAlbums.length,
               ),
             ),
@@ -552,7 +762,7 @@ class _AlbumsTabState extends State<_AlbumsTab> with AutomaticKeepAliveClientMix
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
-                child: _LoadMoreButton(
+                child: ArtistLoadMoreButton(
                   onPressed: _loadMore,
                   text: 'Show ${widget.albums.length - _displayCount} more',
                 ),
@@ -566,245 +776,6 @@ class _AlbumsTabState extends State<_AlbumsTab> with AutomaticKeepAliveClientMix
   }
 }
 
-// Song Tile Widget
-class _SongTile extends StatelessWidget {
-  final Song song;
-  final VoidCallback onTap;
-  final bool showRank;
-  final int? rank;
-
-  const _SongTile({
-    required this.song,
-    required this.onTap,
-    this.showRank = false,
-    this.rank,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.05),
-                width: 1,
-              ),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Row(
-                    children: [
-                      if (showRank && rank != null) ...[
-                        SizedBox(
-                          width: 28,
-                          child: Text(
-                            '$rank',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.4),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          song.coverUrl,
-                          width: 52,
-                          height: 52,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_,__,___) => Container(
-                            width: 52,
-                            height: 52,
-                            color: Colors.white.withValues(alpha: 0.05),
-                            child: Icon(Icons.music_note, color: Colors.white.withValues(alpha: 0.3)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              song.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              song.artist,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.more_horiz_rounded,
-                          color: Colors.white.withValues(alpha: 0.4),
-                          size: 20,
-                        ),
-                        onPressed: () {},
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Album Card Widget
-class _AlbumCard extends StatelessWidget {
-  final Album album;
-  const _AlbumCard({required this.album});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {},
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    album.coverUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_,__,___) => Container(
-                      color: Colors.white.withValues(alpha: 0.05),
-                      child: Icon(Icons.album, size: 60, color: Colors.white.withValues(alpha: 0.3)),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.4),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            album.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            album.year.isNotEmpty ? album.year : 'Album',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Load More Button Widget
-class _LoadMoreButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final String text;
-
-  const _LoadMoreButton({
-    required this.onPressed,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
-              ),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onPressed,
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar _tabBar;

@@ -6,13 +6,16 @@ import 'package:sangeet/services/audio_device_service.dart';
 import 'package:sangeet/components/device_selector_sheet.dart';
 import '../screens/body.dart';
 
+/// Bottom player widget with optional custom onTap callback
 class BottomPlayer extends StatelessWidget {
   final Color backgroundColor;
+  final VoidCallback? onTap;
 
   const BottomPlayer({
-    super.key,
+    Key? key,
     required this.backgroundColor,
-  });
+    this.onTap,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -26,8 +29,12 @@ class BottomPlayer extends StatelessWidget {
 
         return GestureDetector(
           onTap: () {
-            // Delegate to Body to open the player (prevents duplicate routes)
-            BodyState.instance?.openPlayerForCurrentSong();
+            // Use custom onTap if provided, otherwise delegate to Body
+            if (onTap != null) {
+              onTap!();
+            } else {
+              BodyState.instance?.openPlayerForCurrentSong();
+            }
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),

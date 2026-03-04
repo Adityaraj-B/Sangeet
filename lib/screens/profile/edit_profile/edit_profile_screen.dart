@@ -104,7 +104,18 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     );
 
     if (pickedFile != null) {
+      // Clear the old image from cache if it exists
+      if (_profileImagePath != null && !_profileImagePath!.startsWith('http')) {
+        final oldFile = File(_profileImagePath!);
+        if (await oldFile.exists()) {
+          FileImage(oldFile).evict();
+        }
+      }
+
       setState(() => _profileImagePath = pickedFile.path);
+
+      // Clear the new image from cache to ensure fresh load
+      FileImage(File(pickedFile.path)).evict();
     }
   }
 
@@ -410,7 +421,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                 image: _profileImagePath != null
                     ? DecorationImage(
                   image: _profileImagePath!.startsWith('http')
-                      ? NetworkImage(_profileImagePath!)
+                      ? NetworkImage(_profileImagePath!) as ImageProvider
                       : FileImage(File(_profileImagePath!)),
                   fit: BoxFit.cover,
                 )

@@ -150,6 +150,7 @@ class _HomeHeaderState extends State<HomeHeader> with SingleTickerProviderStateM
               ),
               const SizedBox(width: 10),
               _ProfileButton(
+                key: ValueKey(_profileImagePath ?? 'no-profile-image'),
                 onTap: widget.onProfileTap,
                 userName: _userName,
                 profileImagePath: _profileImagePath,
@@ -228,6 +229,7 @@ class _ProfileButton extends StatefulWidget {
   final String? profileImagePath;
 
   const _ProfileButton({
+    super.key,
     this.onTap,
     required this.userName,
     this.profileImagePath,
@@ -279,7 +281,7 @@ class _ProfileButtonState extends State<_ProfileButton> {
             image: widget.profileImagePath != null
                 ? DecorationImage(
                     image: widget.profileImagePath!.startsWith('http')
-                        ? NetworkImage(widget.profileImagePath!)
+                        ? NetworkImage(widget.profileImagePath!) as ImageProvider
                         : FileImage(File(widget.profileImagePath!)),
                     fit: BoxFit.cover,
                   )

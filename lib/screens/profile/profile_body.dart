@@ -73,39 +73,6 @@ class _ProfileBodyState extends State<ProfileBody>
     });
   }
 
-  Future<void> _saveUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_name', _userName);
-    await prefs.setString('user_email', _userEmail);
-    if (_profileImagePath != null) {
-      await prefs.setString('profile_image', _profileImagePath!);
-    }
-  }
-
-  Future<void> _pickImage() async {
-    HapticFeedback.lightImpact();
-
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ImagePickerSheet(),
-    );
-
-    if (source == null) return;
-
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-      source: source,
-      maxWidth: 512,
-      maxHeight: 512,
-      imageQuality: 85,
-    );
-
-    if (pickedFile != null) {
-      setState(() => _profileImagePath = pickedFile.path);
-      await _saveUserData();
-    }
-  }
 
   void _navigateToEditProfile() async {
     HapticFeedback.lightImpact();
@@ -171,10 +138,11 @@ class _ProfileBodyState extends State<ProfileBody>
           StretchMode.blurBackground,
         ],
         background: _ProfileHeader(
+          key: ValueKey(_profileImagePath ?? 'no-image'),
           userName: _userName,
           userEmail: _userEmail,
           profileImagePath: _profileImagePath,
-          onAvatarTap: _pickImage,
+          onAvatarTap: _navigateToEditProfile,
         ),
       ),
     );
@@ -456,6 +424,7 @@ class _ProfileHeader extends StatefulWidget {
   final VoidCallback onAvatarTap;
 
   const _ProfileHeader({
+    super.key,
     required this.userName,
     required this.userEmail,
     this.profileImagePath,
@@ -619,7 +588,7 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
               image: widget.profileImagePath != null
                   ? DecorationImage(
                 image: widget.profileImagePath!.startsWith('http')
-                    ? NetworkImage(widget.profileImagePath!)
+                    ? NetworkImage(widget.profileImagePath!) as ImageProvider
                     : FileImage(File(widget.profileImagePath!)),
                 fit: BoxFit.cover,
               )
@@ -748,134 +717,6 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
   }
 }
 
-// Image Picker Bottom Sheet
-class _ImagePickerSheet extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
-          decoration: BoxDecoration(
-            color: kBackgroundColor.withValues(alpha :0.9),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(
-              top: BorderSide(
-                color: Colors.white.withValues(alpha :0.1),
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha :0.2),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Change Profile Photo',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white.withValues(alpha :0.9),
-                ),
-              ),
-              const SizedBox(height: 24),
-              _PickerOption(
-                icon: Icons.camera_alt_rounded,
-                label: 'Take Photo',
-                onTap: () => Navigator.pop(context, ImageSource.camera),
-              ),
-              const SizedBox(height: 12),
-              _PickerOption(
-                icon: Icons.photo_library_rounded,
-                label: 'Choose from Gallery',
-                onTap: () => Navigator.pop(context, ImageSource.gallery),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Picker Option Widget
-class _PickerOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _PickerOption({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha :0.06),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.white.withValues(alpha :0.06),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: kAccentColor.withValues(alpha :0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: kAccentColor,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.white.withValues(alpha :0.3),
-                size: 22,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // Glass Orb Widget
 class _GlassOrb extends StatelessWidget {

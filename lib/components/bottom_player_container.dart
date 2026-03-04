@@ -4,10 +4,12 @@ import 'bottom_player.dart';
 
 class BottomPlayerContainer extends StatelessWidget {
   final Color backgroundColor;
+  final VoidCallback? onTap;
 
   const BottomPlayerContainer({
     super.key,
     required this.backgroundColor,
+    this.onTap,
   });
 
   @override
@@ -30,6 +32,7 @@ class BottomPlayerContainer extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 1),
               child: BottomPlayer(
                 backgroundColor: backgroundColor,
+                onTap: onTap,
               ),
             ),
           ),

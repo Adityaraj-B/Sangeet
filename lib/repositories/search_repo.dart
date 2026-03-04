@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
 import '../models/artist.dart'; // Make sure this import exists
+import '../models/album.dart';
 
 class SearchRepository {
   static const String baseUrl = 'https://vercelapi-gamma.vercel.app/api';
@@ -47,6 +48,27 @@ class SearchRepository {
     }
   }
 
+  // --- ALBUM SEARCH ---
+
+  Future<List<Album>> searchAlbums(String query, {int limit = 10}) async {
+    if (query.trim().isEmpty) return [];
+
+    try {
+      final uri = Uri.parse(
+        '$baseUrl/search/albums?query=${Uri.encodeComponent(query)}&limit=$limit',
+      );
+
+      final res = await http.get(uri);
+
+      if (res.statusCode != 200) return [];
+
+      return _parseAlbums(res.body);
+    } catch (e) {
+      print('Error searching albums: $e');
+      return [];
+    }
+  }
+
   // --- AUTOCOMPLETE SUGGESTIONS (Spotify-like) ---
 
   /// Fetches autocomplete suggestions using the API's autocomplete endpoint.
@@ -76,38 +98,44 @@ class SearchRepository {
     }
   }
 
-  /// Fallback method when autocomplete endpoint is unavailable
+  /// Fallback method when autocomplete endpoint is unavailable.
+  /// Searches songs, artists, AND albums for comprehensive suggestions.
   Future<List<String>> _fallbackSuggestions(String query, int limit) async {
     try {
-      // Fetch a quick search with minimal results for fast suggestions
+      // Fetch quick searches in parallel for fast suggestions
       final results = await Future.wait([
         search(query, limit: 5),
         searchArtists(query, limit: 3),
+        searchAlbums(query, limit: 3),
       ]);
 
       final songs = results[0] as List<Song>;
       final artists = results[1] as List<Artist>;
+      final albums = results[2] as List<Album>;
 
       final suggestions = <String>{};
 
-      // Add artist names first (high priority in Spotify-like search)
+      // Add artist names first (highest priority — Spotify behavior)
       for (final artist in artists) {
         if (_matchesQuery(artist.name, query)) {
           suggestions.add(artist.name);
         }
       }
 
-      // Add song titles
-      for (final song in songs) {
+      // Add album names (critical for queries like "dhurandhar")
+      for (final album in albums) {
+        if (_matchesQuery(album.name, query)) {
+          suggestions.add(album.name);
+        }
+      }
+
+      // Add song titles — prefer high playCount songs
+      final sortedSongs = List<Song>.from(songs)
+        ..sort((a, b) => (b.playCount ?? 0).compareTo(a.playCount ?? 0));
+
+      for (final song in sortedSongs) {
         if (_matchesQuery(song.title, query)) {
           suggestions.add(song.title);
-        }
-        // Also suggest "Song - Artist" format for popular pattern
-        if (suggestions.length < limit) {
-          final combined = '${song.title} - ${song.artist.split(',').first.trim()}';
-          if (combined.length < 50) { // Keep suggestions concise
-            suggestions.add(combined);
-          }
         }
       }
 
@@ -266,6 +294,10 @@ class SearchRepository {
       streamUrl = dl['link']?.toString() ?? dl['url']?.toString();
     }
 
+    final int? playCount = int.tryParse(e['playCount']?.toString() ?? '');
+    final String? language = e['language']?.toString();
+    final String? year = e['year']?.toString();
+
     return Song(
       id: id,
       title: title,
@@ -273,6 +305,9 @@ class SearchRepository {
       coverUrl: coverUrl,
       duration: Duration(seconds: durationSeconds),
       streamUrl: streamUrl,
+      playCount: playCount,
+      language: language,
+      year: year,
     );
   }
 
@@ -300,6 +335,59 @@ class SearchRepository {
       imageUrl: imageUrl,
       type: type,
       bio: bio,
+    );
+  }
+
+  List<Album> _parseAlbums(String body) {
+    try {
+      final decoded = json.decode(body);
+      final data = decoded['data'];
+
+      List list = [];
+      if (data is List) {
+        list = data;
+      } else if (data is Map && data['results'] is List) {
+        list = data['results'];
+      }
+
+      return list.map(_parseSingleAlbum).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Album _parseSingleAlbum(dynamic e) {
+    final String id = e['id']?.toString() ?? '';
+    final String name = e['name']?.toString() ?? e['title']?.toString() ?? 'Unknown';
+
+    String artist = 'Unknown';
+    if (e['artists']?['primary'] is List) {
+      artist = (e['artists']['primary'] as List)
+          .map((a) => a['name'])
+          .where((n) => n != null && n.toString().isNotEmpty)
+          .join(', ');
+    } else if (e['primaryArtists'] != null) {
+      artist = e['primaryArtists'].toString();
+    } else if (e['artist'] != null) {
+      artist = e['artist'].toString();
+    }
+
+    String coverUrl = '';
+    if (e['image'] is List && (e['image'] as List).isNotEmpty) {
+      final img = (e['image'] as List).last;
+      coverUrl = img['link']?.toString() ?? img['url']?.toString() ?? '';
+    }
+
+    final int songCount = int.tryParse(e['songCount']?.toString() ?? '') ?? 0;
+    final String year = e['year']?.toString() ?? '';
+
+    return Album(
+      id: id,
+      name: name,
+      artist: artist,
+      coverUrl: coverUrl,
+      songCount: songCount,
+      year: year,
     );
   }
 }

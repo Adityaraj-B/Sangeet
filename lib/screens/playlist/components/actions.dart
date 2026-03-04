@@ -33,13 +33,14 @@ class PlaylistActions extends StatelessWidget {
     // Shuffle the songs
     final shuffledSongs = List<Song>.from(playlistSongs)..shuffle(Random());
 
-    // Play the first song
-    await audioService.playSong(shuffledSongs.first);
-
-    // Add the rest to queue
+    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // This ensures playSong() sees the manual queue and won't load similar songs
     if (shuffledSongs.length > 1) {
       queueService.addAllToQueue(shuffledSongs.sublist(1));
     }
+
+    // Now play the first song
+    await audioService.playSong(shuffledSongs.first);
 
     // Open the player screen
     BodyState.instance?.openPlayerForCurrentSong();
@@ -58,13 +59,14 @@ class PlaylistActions extends StatelessWidget {
     final audioService = AudioPlayerService();
     final queueService = QueueService();
 
-    // Play the first song
-    await audioService.playSong(playlistSongs.first);
-
-    // Add the rest to queue
+    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // This ensures playSong() sees the manual queue and won't load similar songs
     if (playlistSongs.length > 1) {
       queueService.addAllToQueue(playlistSongs.sublist(1));
     }
+
+    // Now play the first song
+    await audioService.playSong(playlistSongs.first);
 
     // Open the player screen
     BodyState.instance?.openPlayerForCurrentSong();

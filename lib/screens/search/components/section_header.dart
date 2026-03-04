@@ -14,24 +14,26 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
       children: [
         Text(
           title,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.3,
           ),
         ),
         if (count != null) ...[
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Text(
-            '($count)',
+            '$count',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+              color: Colors.white.withValues(alpha: 0.3),
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ],

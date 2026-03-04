@@ -349,6 +349,9 @@ class RemoteMusicService implements MusicApiService {
     }
 
     final int durationSeconds = int.tryParse(e['duration']?.toString() ?? '') ?? 0;
+    final int? playCount = int.tryParse(e['playCount']?.toString() ?? '');
+    final String? language = e['language']?.toString();
+    final String? year = e['year']?.toString();
 
     return Song(
       id: id,
@@ -357,6 +360,9 @@ class RemoteMusicService implements MusicApiService {
       coverUrl: coverUrl,
       duration: Duration(seconds: durationSeconds),
       streamUrl: streamUrl,
+      playCount: playCount,
+      language: language,
+      year: year,
     );
   }
 }

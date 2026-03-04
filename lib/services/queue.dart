@@ -37,11 +37,21 @@ class QueueService extends ChangeNotifier {
     _currentSong = song;
     notifyListeners();
 
+    // Count how many manual (playlist) songs are in the queue
+    final manualSongsInQueue = _upNext.where((s) => _manualQueueIds.contains(s.id)).length;
+
     // If the user picked a different song (often from another genre/artist),
     // refresh "similar" suggestions so Up Next matches the new context.
     // Preserve any manually queued items.
     if (previousId == null || previousId != song.id) {
-      await refreshSimilarForCurrent(resetAutoQueue: true);
+      // Only refresh similar songs if there are no manual songs in queue
+      // This prevents mixing similar songs with playlist songs
+      if (manualSongsInQueue == 0) {
+        await refreshSimilarForCurrent(resetAutoQueue: true);
+      } else {
+        // Keep manual songs but don't add similar songs yet
+        print('QueueService.playSong: Skipping similar songs load - $manualSongsInQueue manual songs in queue');
+      }
     } else {
       // Same song selected again; if we have no queue, ensure it's populated.
       if (_upNext.isEmpty) {
@@ -101,9 +111,16 @@ class QueueService extends ChangeNotifier {
 
     print('QueueService.playNext: Set current song to ${next.title}, remaining queue: ${_upNext.length}');
 
-    // Load more similar songs if queue is getting low
-    if (_upNext.length < 3 && _currentSong != null) {
-      print('QueueService.playNext: Queue low (${_upNext.length}), loading similar songs...');
+    // Count how many manual (playlist) songs remain in queue
+    final manualSongsRemaining = _upNext.where((s) => _manualQueueIds.contains(s.id)).length;
+    print('QueueService.playNext: Manual songs remaining in queue: $manualSongsRemaining');
+
+    // Only load similar songs if:
+    // 1. Queue is getting low (< 3 songs), AND
+    // 2. There are no manual (playlist) songs remaining
+    // This ensures we finish playing all playlist songs before adding similar songs
+    if (_upNext.length < 3 && manualSongsRemaining == 0 && _currentSong != null) {
+      print('QueueService.playNext: Queue low (${_upNext.length}) and no manual songs, loading similar songs...');
       await _loadSimilarSongs(_currentSong!);
       print('QueueService.playNext: After loading, queue length: ${_upNext.length}');
     }
