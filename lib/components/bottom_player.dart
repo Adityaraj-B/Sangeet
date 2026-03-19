@@ -20,6 +20,10 @@ class BottomPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audio = AudioPlayerService();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    final horizontalPad = isWide ? 20.0 : 12.0;
+    final playerHeight = isWide ? 72.0 : 64.0;
 
     return AnimatedBuilder(
       animation: audio.queue,
@@ -29,7 +33,6 @@ class BottomPlayer extends StatelessWidget {
 
         return GestureDetector(
           onTap: () {
-            // Use custom onTap if provided, otherwise delegate to Body
             if (onTap != null) {
               onTap!();
             } else {
@@ -37,7 +40,7 @@ class BottomPlayer extends StatelessWidget {
             }
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: EdgeInsets.symmetric(horizontal: horizontalPad),
             child: Stack(
               children: [
                 ClipRRect(
@@ -45,8 +48,8 @@ class BottomPlayer extends StatelessWidget {
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                     child: Container(
-                      height: 64,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      height: playerHeight,
+                      padding: EdgeInsets.symmetric(horizontal: isWide ? 16 : 12),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(20),
@@ -57,20 +60,25 @@ class BottomPlayer extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.network(
-                              song.coverUrl,
-                              height: 44,
-                              width: 44,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
+                          // Animated cover art change
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 350),
+                            child: ClipRRect(
+                              key: ValueKey('mini_art_${song.id}'),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network(
+                                song.coverUrl,
                                 height: 44,
                                 width: 44,
-                                color: Colors.black.withValues(alpha: 0.2),
-                                child: const Icon(
-                                  Icons.music_note,
-                                  color: Colors.white24,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  height: 44,
+                                  width: 44,
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  child: const Icon(
+                                    Icons.music_note,
+                                    color: Colors.white24,
+                                  ),
                                 ),
                               ),
                             ),
@@ -82,23 +90,31 @@ class BottomPlayer extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  song.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  child: Text(
+                                    song.title,
+                                    key: ValueKey('mini_title_${song.id}'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 2),
-                                Text(
-                                  song.artist,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.65),
-                                    fontSize: 12,
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  child: Text(
+                                    song.artist,
+                                    key: ValueKey('mini_artist_${song.id}'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.65),
+                                      fontSize: 12,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -116,14 +132,8 @@ class BottomPlayer extends StatelessWidget {
                             initialData: audio.isPlaying,
                             builder: (context, snapshot) {
                               final playing = snapshot.data ?? false;
-                              return IconButton(
-                                icon: Icon(
-                                  playing
-                                      ? Icons.pause_circle_filled_rounded
-                                      : Icons.play_circle_filled_rounded,
-                                  size: 36,
-                                  color: Colors.white,
-                                ),
+                              return _MiniPlayPauseButton(
+                                isPlaying: playing,
                                 onPressed: audio.togglePlayPause,
                               );
                             },
@@ -181,5 +191,58 @@ class BottomPlayer extends StatelessWidget {
       case null:
         return Icons.speaker_group_outlined;
     }
+  }
+}
+
+/// Mini player animated play/pause button.
+class _MiniPlayPauseButton extends StatefulWidget {
+  final bool isPlaying;
+  final VoidCallback onPressed;
+
+  const _MiniPlayPauseButton({required this.isPlaying, required this.onPressed});
+
+  @override
+  State<_MiniPlayPauseButton> createState() => _MiniPlayPauseButtonState();
+}
+
+class _MiniPlayPauseButtonState extends State<_MiniPlayPauseButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      value: widget.isPlaying ? 1.0 : 0.0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(_MiniPlayPauseButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      widget.isPlaying ? _controller.forward() : _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: AnimatedIcon(
+        icon: AnimatedIcons.play_pause,
+        progress: CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+        size: 36,
+        color: Colors.white,
+      ),
+      onPressed: widget.onPressed,
+    );
   }
 }

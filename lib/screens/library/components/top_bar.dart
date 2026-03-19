@@ -61,11 +61,15 @@ class _TopBarState extends State<TopBar> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    final horizontalPad = isWide ? 28.0 : 20.0;
+
     return SizeTransition(
       sizeFactor: CurvedAnimation(parent: widget.animation, curve: Curves.easeOut),
       axisAlignment: -1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18),
+        padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 18),
         child: Row(
           children: [
             // 1. Profile Picture (Left)

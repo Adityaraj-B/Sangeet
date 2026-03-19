@@ -22,13 +22,15 @@ class PlaylistSongs extends StatelessWidget {
     // Find the index of the tapped song
     final songIndex = songs.indexWhere((s) => s.id == song.id);
 
-    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    final queueService = QueueService();
+
+    // Clear existing queue to avoid mixing old songs with playlist songs
+    queueService.clearQueue();
+
+    // Add remaining playlist songs to queue BEFORE playing
     // This ensures playSong() sees the manual queue and won't load similar songs
     if (songIndex >= 0 && songIndex < songs.length - 1) {
       final remainingSongs = songs.sublist(songIndex + 1);
-      final queueService = QueueService();
-
-      // Add playlist songs to queue first
       queueService.addAllToQueue(remainingSongs);
     }
 

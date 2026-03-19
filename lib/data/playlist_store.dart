@@ -166,14 +166,7 @@ class PlaylistStorageService {
 
     if (songData == null) return null;
 
-    return Song(
-      id: songData['id'],
-      title: songData['title'],
-      artist: songData['artist'],
-      coverUrl: songData['coverUrl'],
-      duration: Duration(seconds: songData['duration']),
-      streamUrl: songData['streamUrl'],
-    );
+    return Song.fromJson(Map<String, dynamic>.from(songData));
   }
 
   // ==================== UTILITIES ====================

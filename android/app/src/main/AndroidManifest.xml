@@ -12,8 +12,9 @@
         android:label="Sangeet"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:usesCleartextTraffic="false">
+        android:enableOnBackInvokedCallback="true">
 
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"

@@ -58,11 +58,14 @@ class _HomeBannerState extends State<HomeBanner> {
     }
 
     final displaySongs = widget.songs.take(5).toList();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    final bannerHeight = isWide ? 220.0 : 175.0;
 
     return Column(
       children: [
         SizedBox(
-          height: 175,
+          height: bannerHeight,
           child: GestureDetector(
             onPanDown: (_) => _isUserInteracting = true,
             onPanEnd: (_) => _isUserInteracting = false,

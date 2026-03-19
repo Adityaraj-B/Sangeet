@@ -72,7 +72,7 @@ class Song {
       year: json['year'],
     );
   }
-  
+
   @override
   String toString() {
     return 'Song(id: $id, title: $title, artist: $artist, streamUrl: $streamUrl)';

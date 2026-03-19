@@ -19,26 +19,46 @@ class QuickPlayGrid extends StatelessWidget {
     if (songs.isEmpty) return const SizedBox.shrink();
 
     final displaySongs = songs.take(4).toList();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      padding: EdgeInsets.fromLTRB(isWide ? 28 : 20, 8, isWide ? 28 : 20, 16),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(child: _QuickPlayTile(song: displaySongs[0], onTap: () => onPlaySong(displaySongs[0]))),
-              const SizedBox(width: 10),
-              Expanded(child: _QuickPlayTile(song: displaySongs.length > 1 ? displaySongs[1] : displaySongs[0], onTap: () => onPlaySong(displaySongs.length > 1 ? displaySongs[1] : displaySongs[0]))),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: _QuickPlayTile(song: displaySongs.length > 2 ? displaySongs[2] : displaySongs[0], onTap: () => onPlaySong(displaySongs.length > 2 ? displaySongs[2] : displaySongs[0]))),
-              const SizedBox(width: 10),
-              Expanded(child: _QuickPlayTile(song: displaySongs.length > 3 ? displaySongs[3] : displaySongs[0], onTap: () => onPlaySong(displaySongs.length > 3 ? displaySongs[3] : displaySongs[0]))),
-            ],
-          ),
+          if (isWide)
+            // On desktop: show all 4 in a single row
+            Row(
+              children: [
+                for (int i = 0; i < displaySongs.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: _QuickPlayTile(
+                      song: displaySongs[i],
+                      onTap: () => onPlaySong(displaySongs[i]),
+                    ),
+                  ),
+                ],
+              ],
+            )
+          else ...[
+            // On mobile: 2x2 grid
+            Row(
+              children: [
+                Expanded(child: _QuickPlayTile(song: displaySongs[0], onTap: () => onPlaySong(displaySongs[0]))),
+                const SizedBox(width: 10),
+                Expanded(child: _QuickPlayTile(song: displaySongs.length > 1 ? displaySongs[1] : displaySongs[0], onTap: () => onPlaySong(displaySongs.length > 1 ? displaySongs[1] : displaySongs[0]))),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(child: _QuickPlayTile(song: displaySongs.length > 2 ? displaySongs[2] : displaySongs[0], onTap: () => onPlaySong(displaySongs.length > 2 ? displaySongs[2] : displaySongs[0]))),
+                const SizedBox(width: 10),
+                Expanded(child: _QuickPlayTile(song: displaySongs.length > 3 ? displaySongs[3] : displaySongs[0], onTap: () => onPlaySong(displaySongs.length > 3 ? displaySongs[3] : displaySongs[0]))),
+              ],
+            ),
+          ],
         ],
       ),
     );

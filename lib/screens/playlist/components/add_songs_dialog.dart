@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,23 +28,31 @@ class _AddSongsDialogState extends State<AddSongsDialog>
   final RemoteMusicService _musicService =
       RemoteMusicService('https://vercelapi-gamma.vercel.app/api');
 
+  List<Song> _suggestedSongs = [];
   List<Song> _trendingSongs = [];
   List<Song> _recentSongs = [];
   List<Song> _likedSongs = [];
+  List<Song> _searchResults = [];
   bool _loading = true;
+  bool _searching = false;
+  String _searchQuery = '';
+  Timer? _debounce;
+  final TextEditingController _searchController = TextEditingController();
 
   final Set<String> _selectedSongIds = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadSongs();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -58,7 +67,13 @@ class _AddSongsDialogState extends State<AddSongsDialog>
       // Get existing song IDs in the playlist
       final existingSongIds = widget.playlist.songIds.toSet();
 
+      // Fetch suggestions based on songs already in the playlist
+      final suggested = await _fetchPlaylistSuggestions(existingSongIds);
+
       setState(() {
+        _suggestedSongs = suggested
+            .where((song) => !existingSongIds.contains(song.id))
+            .toList();
         // Filter out songs that are already in the playlist
         _trendingSongs = trending
             .where((song) => !existingSongIds.contains(song.id))
@@ -73,6 +88,99 @@ class _AddSongsDialogState extends State<AddSongsDialog>
       });
     } catch (e) {
       setState(() => _loading = false);
+    }
+  }
+
+  /// Fetch song suggestions based on what's already in the playlist.
+  /// Uses the Saavn suggestions API for up to 3 existing songs with
+  /// diverse artists, then deduplicates and sorts by relevance.
+  Future<List<Song>> _fetchPlaylistSuggestions(Set<String> existingIds) async {
+    final playlistSongs = widget.playlist.songs;
+    if (playlistSongs.isEmpty) return [];
+
+    try {
+      // Pick up to 3 diverse seed songs from the playlist
+      final seenArtists = <String>{};
+      final seeds = <Song>[];
+      for (final song in playlistSongs) {
+        final artist = song.artist.split(RegExp(r'[,&]')).first.trim().toLowerCase();
+        if (seenArtists.add(artist) && song.id.isNotEmpty) {
+          seeds.add(song);
+          if (seeds.length >= 3) break;
+        }
+      }
+
+      // If we couldn't get diverse seeds, just take the first few
+      if (seeds.isEmpty) {
+        seeds.addAll(playlistSongs.take(3));
+      }
+
+      // Fetch suggestions for each seed in parallel
+      final results = await Future.wait(
+        seeds.map((s) => _musicService.getSongSuggestions(s.id)),
+      );
+
+      // Merge, deduplicate, exclude existing playlist songs
+      final seenIds = <String>{};
+      final allSuggestions = <Song>[];
+      for (final batch in results) {
+        for (final song in batch) {
+          if (song.id.isNotEmpty &&
+              !existingIds.contains(song.id) &&
+              seenIds.add(song.id)) {
+            allSuggestions.add(song);
+          }
+        }
+      }
+
+      // Enforce artist diversity: max 3 per artist
+      final artistCount = <String, int>{};
+      final diverse = <Song>[];
+      for (final song in allSuggestions) {
+        final artist = song.artist.split(RegExp(r'[,&]')).first.trim().toLowerCase();
+        final count = artistCount[artist] ?? 0;
+        if (count < 3) {
+          diverse.add(song);
+          artistCount[artist] = count + 1;
+        }
+      }
+
+      return diverse.take(20).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  void _onSearchChanged(String query) {
+    _debounce?.cancel();
+    _searchQuery = query;
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+      });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(query.trim());
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) return;
+    setState(() => _searching = true);
+    try {
+      final existingIds = widget.playlist.songIds.toSet();
+      final results = await _musicService.searchSongs(query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results
+            .where((s) => !existingIds.contains(s.id))
+            .toList();
+        _searching = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _searching = false);
     }
   }
 
@@ -92,7 +200,7 @@ class _AddSongsDialogState extends State<AddSongsDialog>
     final provider = context.read<PlaylistProvider>();
 
     // Get all selected songs from all tabs
-    final allSongs = [..._trendingSongs, ..._recentSongs, ..._likedSongs];
+    final allSongs = [..._suggestedSongs, ..._trendingSongs, ..._recentSongs, ..._likedSongs, ..._searchResults];
     final songsToAdd = allSongs
         .where((song) => _selectedSongIds.contains(song.id))
         .toList();
@@ -231,7 +339,11 @@ class _AddSongsDialogState extends State<AddSongsDialog>
                   indicatorColor: Colors.white,
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.white60,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
                   tabs: const [
+                    Tab(text: 'Suggested'),
+                    Tab(text: 'Search'),
                     Tab(text: 'Trending'),
                     Tab(text: 'Recent'),
                     Tab(text: 'Liked'),
@@ -251,6 +363,8 @@ class _AddSongsDialogState extends State<AddSongsDialog>
                       : TabBarView(
                           controller: _tabController,
                           children: [
+                            _buildSongList(_suggestedSongs, emptyMessage: 'Add songs to get suggestions'),
+                            _buildSearchTab(),
                             _buildSongList(_trendingSongs),
                             _buildSongList(_recentSongs),
                             _buildSongList(_likedSongs),
@@ -299,7 +413,110 @@ class _AddSongsDialogState extends State<AddSongsDialog>
     );
   }
 
-  Widget _buildSongList(List<Song> songs) {
+  Widget _buildSearchTab() {
+    return Column(
+      children: [
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            style: const TextStyle(color: Colors.white, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: 'Search for songs...',
+              hintStyle: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 15,
+              ),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                color: Colors.white.withValues(alpha: 0.5),
+                size: 22,
+              ),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white.withValues(alpha: 0.5),
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearchChanged('');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.08),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.15),
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.15),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Results
+        Expanded(
+          child: _searching
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : _searchQuery.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_rounded,
+                              size: 48,
+                              color: Colors.white.withValues(alpha: 0.3),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Search for songs to add',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : _buildSongList(
+                      _searchResults,
+                      emptyMessage: 'No results for "$_searchQuery"',
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSongList(List<Song> songs, {String emptyMessage = 'No songs available'}) {
     if (songs.isEmpty) {
       return Center(
         child: Padding(
@@ -314,11 +531,12 @@ class _AddSongsDialogState extends State<AddSongsDialog>
               ),
               const SizedBox(height: 12),
               Text(
-                'No songs available',
+                emptyMessage,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.5),
                   fontSize: 14,
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),

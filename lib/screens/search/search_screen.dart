@@ -11,6 +11,7 @@ import 'package:sangeet/models/album.dart';
 import 'package:sangeet/screens/artist/artist_screen.dart';
 import 'package:sangeet/screens/albums/albums_screen.dart';
 import 'package:sangeet/services/remote_music_service.dart';
+import 'package:sangeet/services/taste_profile_service.dart';
 import 'components/search_field.dart';
 import 'components/category_chips.dart';
 import 'components/shimmer_loading.dart';
@@ -147,11 +148,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         widget.repository.searchAlbums(trimmed, limit: 15),
       ];
 
-      // For multi-word queries, also fire each word independently
+      // For multi-word queries, also fire each word independently (Saavn only — faster)
       if (words.length > 1) {
         for (final w in words) {
           if (w.length >= 3) {
-            futures.add(widget.repository.search(w, limit: 20));
+            futures.add(widget.repository.searchSaavn(w, limit: 20));
             futures.add(widget.repository.searchArtists(w, limit: 8));
             futures.add(widget.repository.searchAlbums(w, limit: 8));
           }
@@ -192,6 +193,27 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
       // Derive suggestions from real results — instant & accurate
       _deriveSuggestions(trimmed, songs, artists, albums);
+
+      // ── Personalized re-ranking ──
+      // Boost songs from artists / genres / languages the user prefers.
+      // Blend: 75% relevance (API order) + 25% taste affinity.
+      final tasteService = TasteProfileService();
+      if (tasteService.hasProfile && songs.length > 3) {
+        // Pre-compute original relevance index (O(n) vs O(n²) if done inside sort)
+        final relevanceMap = <String, double>{};
+        for (int i = 0; i < songs.length; i++) {
+          relevanceMap[songs[i].id] = 1.0 - (i / songs.length);
+        }
+        songs.sort((a, b) {
+          final aRelevance = relevanceMap[a.id] ?? 0.5;
+          final bRelevance = relevanceMap[b.id] ?? 0.5;
+          final aTaste = tasteService.affinityScore(a);
+          final bTaste = tasteService.affinityScore(b);
+          final aScore = aRelevance * 0.75 + aTaste * 0.25;
+          final bScore = bRelevance * 0.75 + bTaste * 0.25;
+          return bScore.compareTo(aScore);
+        });
+      }
 
       if (!mounted) return;
       setState(() {
@@ -725,7 +747,10 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     SizeConfig.init(context);
-    final double sidePad = getProportionateScreenWidth(20);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    // On desktop, use fixed padding instead of proportional
+    final double sidePad = isWide ? 28 : getProportionateScreenWidth(20);
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(

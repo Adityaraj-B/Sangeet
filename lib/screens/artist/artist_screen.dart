@@ -83,11 +83,15 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
       if (!mounted) return;
 
       final artist = results[0] as Artist?;
-      final songs = results[1] as List<Song>;
+      var songs = results[1] as List<Song>;
       final albums = results[2] as List<Album>;
 
       if (artist != null) {
-        final validSongs = songs.where((s) => s.streamUrl?.isNotEmpty == true).toList();
+        // Filter songs: need streamUrl
+        var validSongs = songs.where((s) =>
+            s.streamUrl?.isNotEmpty == true
+        ).toList();
+
         final popularitySorted = List<Song>.from(validSongs);
         final latestSorted = List<Song>.from(validSongs.reversed);
 
@@ -103,6 +107,8 @@ class _ArtistScreenState extends State<ArtistScreen> with TickerProviderStateMix
           _albums = filteredAlbums;
           _loading = false;
         });
+      } else {
+        if (mounted) setState(() => _loading = false);
       }
     } catch (e) {
       debugPrint('Error loading artist data: $e');
@@ -586,7 +592,8 @@ class _PopularSongsTabState extends State<_PopularSongsTab> with AutomaticKeepAl
   void _handleSongTap(Song song, int index) {
     final queueService = QueueService();
 
-    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // Clear existing queue and add remaining artist songs
+    queueService.clearQueue();
     if (index < widget.songs.length - 1) {
       final remainingSongs = widget.songs.sublist(index + 1);
       queueService.addAllToQueue(remainingSongs);
@@ -661,7 +668,8 @@ class _LatestSongsTabState extends State<_LatestSongsTab> with AutomaticKeepAliv
   void _handleSongTap(Song song, int index) {
     final queueService = QueueService();
 
-    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // Clear existing queue and add remaining artist songs
+    queueService.clearQueue();
     if (index < widget.songs.length - 1) {
       final remainingSongs = widget.songs.sublist(index + 1);
       queueService.addAllToQueue(remainingSongs);

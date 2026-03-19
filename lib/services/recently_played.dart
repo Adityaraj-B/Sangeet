@@ -10,7 +10,7 @@ class RecentlyPlayedService {
   RecentlyPlayedService._internal();
 
   static const String _recentKey = 'recently_played_songs';
-  static const int _maxRecentSongs = 50;
+  static const int _maxRecentSongs = 200;
 
   // 2. The Notifier (Listens for changes)
   // Widgets can listen to this to rebuild automatically.
@@ -22,8 +22,9 @@ class RecentlyPlayedService {
     recentSongsNotifier.value = songs;
   }
 
-  /// Add song to recently played
-  Future<void> addSong(Song song) async {
+  /// Add song to recently played.
+  /// If [skipped] is true the song was played < 30 s — recorded as a negative signal.
+  Future<void> addSong(Song song, {bool skipped = false}) async {
     try {
       final recentJson = await SecureStorageService.getString(_recentKey);
 
@@ -34,13 +35,20 @@ class RecentlyPlayedService {
         recentList = decoded.cast<Map<String, dynamic>>();
       }
 
-      // Remove if already exists (to move to top)
-      recentList.removeWhere((item) => item['id'] == song.id);
+      // Find existing entry to carry forward its playCount
+      int previousPlayCount = 0;
+      final existingIndex = recentList.indexWhere((item) => item['id'] == song.id);
+      if (existingIndex != -1) {
+        previousPlayCount = (recentList[existingIndex]['playCount'] as int?) ?? 1;
+        recentList.removeAt(existingIndex);
+      }
 
-      // Add to beginning with timestamp
+      // Add to beginning with timestamp and accumulated play count
       recentList.insert(0, {
         ...song.toJson(),
         'playedAt': DateTime.now().toIso8601String(),
+        'playCount': previousPlayCount + 1,
+        'skipped': skipped,
       });
 
       // Keep only last N songs
@@ -96,6 +104,8 @@ class RecentlyPlayedService {
         return {
           'song': Song.fromJson(json),
           'playedAt': DateTime.parse(json['playedAt']),
+          'playCount': json['playCount'] as int? ?? 1,
+          'skipped': json['skipped'] as bool? ?? false,
         };
       }).toList();
     } catch (e) {

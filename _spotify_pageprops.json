@@ -1,0 +1,332 @@
+{
+  "state": {
+    "data": {
+      "entity": {
+        "type": "playlist",
+        "name": "Dumb",
+        "uri": "spotify:playlist:4r3guMPUOXYIVsHTTdBT2Q",
+        "id": "4r3guMPUOXYIVsHTTdBT2Q",
+        "title": "Dumb",
+        "subtitle": "Adityaraj",
+        "authors": null,
+        "coverArt": {
+          "sources": [
+            {
+              "height": 640,
+              "width": 640,
+              "url": "https://mosaic.scdn.co/640/ab67616d00001e02227edcd51b6622cdcbe9f43cab67616d00001e028a09f10b028a8bb55bfed9b8ab67616d00001e02942a0c9ac8f1def7c8805044ab67616d00001e02e4073def0c03a91e3fceaf73"
+            },
+            {
+              "height": 300,
+              "width": 300,
+              "url": "https://mosaic.scdn.co/300/ab67616d00001e02227edcd51b6622cdcbe9f43cab67616d00001e028a09f10b028a8bb55bfed9b8ab67616d00001e02942a0c9ac8f1def7c8805044ab67616d00001e02e4073def0c03a91e3fceaf73"
+            },
+            {
+              "height": 60,
+              "width": 60,
+              "url": "https://mosaic.scdn.co/60/ab67616d00001e02227edcd51b6622cdcbe9f43cab67616d00001e028a09f10b028a8bb55bfed9b8ab67616d00001e02942a0c9ac8f1def7c8805044ab67616d00001e02e4073def0c03a91e3fceaf73"
+            }
+          ]
+        },
+        "releaseDate": null,
+        "duration": 0,
+        "isPlayable": true,
+        "playabilityReason": "UNKNOWN",
+        "isExplicit": false,
+        "hasVideo": false,
+        "relatedEntityUri": "spotify:playlist:4r3guMPUOXYIVsHTTdBT2Q",
+        "trackList": [
+          {
+            "uri": "spotify:track:2SL6oP2YAEQbqsrkOzRGO4",
+            "uid": "4f4fcd49a2cd012d",
+            "title": "Venom - Music From The Motion Picture",
+            "subtitle": "Eminem",
+            "isExplicit": true,
+            "isNineteenPlus": false,
+            "duration": 269554,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/c7e59d4e419a732e80a5b75e6c40dfccb3bd1780"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:27NovPIUIRrOZoCHxABJwK",
+            "uid": "4fd7970589cc2a38",
+            "title": "INDUSTRY BABY (feat. Jack Harlow)",
+            "subtitle": "Lil Nas X, Jack Harlow",
+            "isExplicit": true,
+            "isNineteenPlus": false,
+            "duration": 212000,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/54ec4be3d4710f882df7237e349c83849549dd99"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:3oLe5ZILASG8vU5dxIMfLY",
+            "uid": "59a5c392388c6b76",
+            "title": "The Search",
+            "subtitle": "NF",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 248053,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/d74629427f19063bccc36caab74f924d093918a8"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:6tMdpUXfT70TD6Eh3XfB1p",
+            "uid": "a4442010e837e40b",
+            "title": "My Ordinary Life",
+            "subtitle": "The Living Tombstone",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 230893,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/cd35f55502d1354c3600b8ae95310e9fd9f44263"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:7xnElMPFCmSlMJ0AY2hnxc",
+            "uid": "1065d997a70896b4",
+            "title": "Dead To Me - Slow + Reverb",
+            "subtitle": "Whales, Fraxo, Lox Chatterbox",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 267227,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/00d0d3ac1c313275da248d7bba424e21e9c237eb"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:2LKOHdMsL0K9KwcPRlJK2v",
+            "uid": "28cec3bfc906c6fa",
+            "title": "After Dark",
+            "subtitle": "Mr.Kitty",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 259146,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/eb9de15a4465f504ee0eadba93e7d265ee0ee6ba"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:58HvfVOeJY7lUuCqF0m3ly",
+            "uid": "318e8d450dff34ec",
+            "title": "MIDDLE OF THE NIGHT",
+            "subtitle": "Elley Duhé",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 184447,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/e7c2441dcf8e321237c35085e4aa05bd0dcfa2c4"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:1J14CdDAvBTE1AJYUOwl6C",
+            "uid": "1c793d3a7a8c9cdb",
+            "title": "Arcade",
+            "subtitle": "Duncan Laurence",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 185146,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/24f24a38b1446a21a54116c74a6f92365d975220"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:1K2RnVhm3eauKnA8PAcPu1",
+            "uid": "6d6f64c24c9c2e2c",
+            "title": "Heat Waves - Slowed",
+            "subtitle": "Glass Animals",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 262248,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/22599bb00677d8bec3a35f8a1ee5c746c68dfd89"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:5O2P9iiztwhomNh8xkR9lJ",
+            "uid": "6288122af7c2eb6d",
+            "title": "Night Changes",
+            "subtitle": "One Direction",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 226597,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/8b4aa4ee753c15c1553c7e993e0937d24d02257e"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:2qxmye6gAegTMjLKEBoR3d",
+            "uid": "80b1015c3f7e08bf",
+            "title": "Let Me Down Slowly",
+            "subtitle": "Alec Benjamin",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 169353,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/19007111a4e21096bcefef77842d7179f0cdf12a"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:1SC5rEoYDGUK4NfG82494W",
+            "uid": "4ed6b7008b673f94",
+            "title": "MONTERO (Call Me By Your Name)",
+            "subtitle": "Lil Nas X",
+            "isExplicit": true,
+            "isNineteenPlus": false,
+            "duration": 137704,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/96749da7e55eb0e3b098039b959504735ae83406"
+            },
+            "entityType": "track"
+          },
+          {
+            "uri": "spotify:track:1SOClUWhOi8vHZYMz3GluK",
+            "uid": "33b59e25aa91ba68",
+            "title": "Infinity",
+            "subtitle": "Jaymes Young",
+            "isExplicit": false,
+            "isNineteenPlus": false,
+            "duration": 237720,
+            "isPlayable": true,
+            "playabilityReason": "PLAYABLE",
+            "audioPreview": {
+              "format": "MP3_96",
+              "url": "https://p.scdn.co/mp3-preview/2b30f2512af94d45733f5535ac48caa3b541c7f1"
+            },
+            "entityType": "track"
+          }
+        ],
+        "visualIdentity": {
+          "backgroundBase": {
+            "alpha": 255,
+            "blue": 0,
+            "green": 66,
+            "red": 127
+          },
+          "backgroundTintedBase": {
+            "alpha": 255,
+            "blue": 0,
+            "green": 33,
+            "red": 86
+          },
+          "textBase": {
+            "alpha": 255,
+            "blue": 255,
+            "green": 255,
+            "red": 255
+          },
+          "textBrightAccent": {
+            "alpha": 255,
+            "blue": 255,
+            "green": 255,
+            "red": 255
+          },
+          "textSubdued": {
+            "alpha": 255,
+            "blue": 136,
+            "green": 194,
+            "red": 252
+          },
+          "image": [
+            {
+              "url": "https://mosaic.scdn.co/300/ab67616d00001e02227edcd51b6622cdcbe9f43cab67616d00001e028a09f10b028a8bb55bfed9b8ab67616d00001e02942a0c9ac8f1def7c8805044ab67616d00001e02e4073def0c03a91e3fceaf73",
+              "maxHeight": 0,
+              "maxWidth": 0
+            }
+          ]
+        },
+        "attributes": [],
+        "format": ""
+      },
+      "embeded_entity_uri": "spotify:playlist:4r3guMPUOXYIVsHTTdBT2Q",
+      "defaultAudioFileObject": {
+        "passthrough": "NONE"
+      }
+    },
+    "settings": {
+      "rtl": false,
+      "session": {
+        "accessToken": "BQCNQs6YdHEjmOh8x--ziHBPgGOn_dTZqh9TNCdGldmKTfEdIvDCaDPdEI3we9OYoTC5rTUR-j54GjVpMBmWlQmIGHROkD-63-7fOFKyU2zHjKrCNV-wsci368Cl3fux5s3cJpdgSQ4",
+        "accessTokenExpirationTimestampMs": 1773142096616,
+        "isAnonymous": true
+      },
+      "entityContext": "playlist",
+      "clientId": "ab9ad0d96a624805a7d51e8868df1f97",
+      "isMobile": false,
+      "isSafari": false,
+      "isIOS": false,
+      "isTablet": false,
+      "isDarkMode": false,
+      "isAudiobookLaunchedInGeoMarket": false
+    },
+    "machineState": {
+      "initialized": false,
+      "showOverflowMenu": false,
+      "playbackMode": "unknown",
+      "currentPreviewTrackIndex": 0,
+      "platformSupportsEncryptedContent": false
+    }
+  },
+  "config": {
+    "correlationId": "953388a682713c2926237e0203c11ef6",
+    "strings": {
+      "en": {
+        "translation": {}
+      }
+    },
+    "locale": "en",
+    "clientId": "ab9ad0d96a624805a7d51e8868df1f97",
+    "restrictionId": ""
+  },
+  "_sentryTraceData": "9b563ff15d0b4b7303102b8a3d8ea4c7-8f5d270646d48521-0",
+  "_sentryBaggage": "sentry-environment=production,sentry-release=cb7c5314f355755f06e0302466ee5e8fea5449a2,sentry-public_key=4cc707ab12ea4779b417479c0550a5cb,sentry-trace_id=9b563ff15d0b4b7303102b8a3d8ea4c7,sentry-org_id=22381,sentry-sampled=false,sentry-sample_rand=0.2752047148192174,sentry-sample_rate=0"
+}

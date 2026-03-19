@@ -79,12 +79,16 @@ class _HomeHeaderState extends State<HomeHeader> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    final horizontalPad = isWide ? 28.0 : 20.0;
+
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 20),
           child: Row(
             children: [
               // Greeting with animated emoji
@@ -325,8 +329,12 @@ class HomeSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    final horizontalPad = isWide ? 28.0 : 20.0;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: horizontalPad),
       child: Row(
         children: [
           // Icon with glass effect (optional)

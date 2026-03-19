@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:sangeet/components/navbar.dart';
+import 'package:sangeet/components/desktop_sidebar.dart';
 import 'package:sangeet/screens/home/home_body.dart';
 import 'package:sangeet/screens/library/library_body.dart';
 import 'package:sangeet/screens/player/player_body.dart';
@@ -38,6 +40,7 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
   final AudioPlayerService _audioService = AudioPlayerService();
   bool _isQueueListenerAttached = false;
   bool _isPlayerRouteOpen = false;
+  int _playRequestId = 0;
 
   @override
   void initState() {
@@ -45,10 +48,7 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
     _instance = this;
     _pages = [
       HomeScreen(onPlaySong: _openPlayerForSong),
-      SearchScreen(
-        repository: SearchRepository(),
-        onPlay: _openPlayerForSong,
-      ),
+      SearchScreen(repository: SearchRepository(), onPlay: _openPlayerForSong),
       PodcastsScreen(onPlayPodcast: _openPlayerForPodcast),
       LibraryBody(onPlaySong: _openPlayerForSong),
     ];
@@ -77,7 +77,9 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
     if (_audioService.currentSong != null) return;
 
     try {
-      final recentSongs = await RecentlyPlayedService().getRecentlyPlayed(limit: 1);
+      final recentSongs = await RecentlyPlayedService().getRecentlyPlayed(
+        limit: 1,
+      );
       if (recentSongs.isNotEmpty && mounted) {
         final lastSong = recentSongs.first;
         setState(() {
@@ -148,13 +150,15 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
     });
 
     // Update color async
-    unawaited(extractDominantColor(song.coverUrl).then((c) {
-      if (!mounted) return;
-      setState(() => _playerColor = c);
-    }));
-
-    // Start playback immediately (don't wait)
-    unawaited(_audioService.playSong(song));
+    unawaited(
+      extractDominantColor(song.coverUrl).then((c) {
+        if (!mounted) return;
+        setState(() => _playerColor = c);
+      }),
+    );
+    // Start playback immediately and retry once if backend switch is transiently busy.
+    final requestId = ++_playRequestId;
+    unawaited(_startPlaybackWithRetry(song, requestId));
 
     // Push player route
     await _pushPlayerRoute();
@@ -180,9 +184,7 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
 
     await Navigator.of(context).push<bool>(
       _ExpandingPlayerRoute(
-        page: PlayerScreen(
-          onCollapse: () => Navigator.pop(context, true),
-        ),
+        page: PlayerScreen(onCollapse: () => Navigator.pop(context, true)),
       ),
     );
 
@@ -215,9 +217,7 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
 
     await Navigator.of(context).push<bool>(
       _ExpandingPlayerRoute(
-        page: PlayerScreen(
-          onCollapse: () => Navigator.pop(context, true),
-        ),
+        page: PlayerScreen(onCollapse: () => Navigator.pop(context, true)),
       ),
     );
 
@@ -254,16 +254,137 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
       _currentItem = PlaybackItem(type: PlaybackType.song, data: song);
       _showMiniPlayer = false;
     });
-    unawaited(extractDominantColor(song.coverUrl).then((c) {
-      if (!mounted) return;
-      setState(() => _playerColor = c);
-    }));
-    unawaited(_audioService.playSong(song));
+    unawaited(
+      extractDominantColor(song.coverUrl).then((c) {
+        if (!mounted) return;
+        setState(() => _playerColor = c);
+      }),
+    );
+
+    final requestId = ++_playRequestId;
+    unawaited(_startPlaybackWithRetry(song, requestId));
     await _pushPlayerRoute();
+  }
+
+  Future<void> _startPlaybackWithRetry(Song song, int requestId) async {
+    try {
+      final firstAttemptStarted = await _audioService.playSong(song);
+      if (requestId != _playRequestId) return;
+
+      if (!firstAttemptStarted) {
+        // Small delay gives native backend time to finish first-load setup.
+        await Future.delayed(const Duration(milliseconds: 120));
+        if (requestId != _playRequestId) return;
+        await _audioService.playSong(song);
+        if (requestId != _playRequestId) return;
+      }
+
+      // Ensure cold-start taps end in active playback, not a loaded-but-paused state.
+      if (!_audioService.isPlaying && requestId == _playRequestId) {
+        await _audioService.play();
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Body: Playback request failed for ${song.title}: $e');
+      debugPrint('$stackTrace');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 800;
+
+        // Desktop keyboard shortcuts
+        if (isWide) {
+          return Shortcuts(
+            shortcuts: <ShortcutActivator, Intent>{
+              const SingleActivator(LogicalKeyboardKey.space):
+                  const _PlayPauseIntent(),
+              const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true):
+                  const _NextTrackIntent(),
+              const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true):
+                  const _PrevTrackIntent(),
+            },
+            child: Actions(
+              actions: <Type, Action<Intent>>{
+                _PlayPauseIntent: CallbackAction<_PlayPauseIntent>(
+                  onInvoke: (_) {
+                    _audioService.togglePlayPause();
+                    return null;
+                  },
+                ),
+                _NextTrackIntent: CallbackAction<_NextTrackIntent>(
+                  onInvoke: (_) {
+                    _audioService.playNext();
+                    return null;
+                  },
+                ),
+                _PrevTrackIntent: CallbackAction<_PrevTrackIntent>(
+                  onInvoke: (_) {
+                    _audioService.playPrevious();
+                    return null;
+                  },
+                ),
+              },
+              child: Focus(autofocus: true, child: _buildDesktopLayout()),
+            ),
+          );
+        }
+
+        return _buildMobileLayout();
+      },
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Scaffold(
+      body: Row(
+        children: [
+          // Sidebar navigation
+          DesktopSidebar(currentIndex: _currentIndex, onTap: _onNavBarTap),
+
+          // Main content area
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      // Cross-fade between pages
+                      ..._pages.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final page = entry.value;
+                        if (index == 2) return const SizedBox.shrink();
+                        return AnimatedOpacity(
+                          opacity: _currentIndex == index ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeInOut,
+                          child: IgnorePointer(
+                            ignoring: _currentIndex != index,
+                            child: page,
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+
+                // Desktop bottom player bar (always visible at bottom when playing)
+                if (_showMiniPlayer && _currentItem != null)
+                  GestureDetector(
+                    onTap: openPlayerForCurrentSong,
+                    child: BottomPlayerContainer(backgroundColor: _playerColor),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout() {
     return Scaffold(
       extendBody: true,
       body: Stack(
@@ -297,9 +418,7 @@ class BodyState extends State<Body> with TickerProviderStateMixin {
                 top: false,
                 child: GestureDetector(
                   onTap: openPlayerForCurrentSong,
-                  child: BottomPlayerContainer(
-                    backgroundColor: _playerColor,
-                  ),
+                  child: BottomPlayerContainer(backgroundColor: _playerColor),
                 ),
               ),
             ),
@@ -363,15 +482,9 @@ class _ExpandingPlayerRoute<T> extends PageRoute<T> {
       end: Offset.zero,
     ).animate(curve);
 
-    final scaleAnimation = Tween<double>(
-      begin: 0.92,
-      end: 1.0,
-    ).animate(curve);
+    final scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(curve);
 
-    final fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(
+    final fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: animation,
         curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
@@ -382,10 +495,7 @@ class _ExpandingPlayerRoute<T> extends PageRoute<T> {
       position: slideAnimation,
       child: ScaleTransition(
         scale: scaleAnimation,
-        child: FadeTransition(
-          opacity: fadeAnimation,
-          child: child,
-        ),
+        child: FadeTransition(opacity: fadeAnimation, child: child),
       ),
     );
   }
@@ -487,4 +597,17 @@ class _PodcastComingSoonDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+// Desktop keyboard shortcut intents
+class _PlayPauseIntent extends Intent {
+  const _PlayPauseIntent();
+}
+
+class _NextTrackIntent extends Intent {
+  const _NextTrackIntent();
+}
+
+class _PrevTrackIntent extends Intent {
+  const _PrevTrackIntent();
 }

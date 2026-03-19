@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:audio_session/audio_session.dart' as audio_session;
+import 'package:sangeet/utils/platform_utils.dart';
 
 /// Represents an audio output device
 class AudioOutputDevice {
@@ -70,6 +71,22 @@ class AudioDeviceService {
   /// Initialize the audio device service
   Future<void> initialize() async {
     if (_initialized) return;
+
+    // On desktop, audio_session is not supported - provide default device
+    if (PlatformUtils.isDesktop) {
+      final defaultDevice = const AudioOutputDevice(
+        id: 'system_audio',
+        name: 'System Audio',
+        type: AudioOutputDeviceType.speaker,
+        isConnected: true,
+        isActive: true,
+      );
+      devicesNotifier.value = [defaultDevice];
+      activeDeviceNotifier.value = defaultDevice;
+      _initialized = true;
+      debugPrint('AudioDeviceService: Desktop platform — using system audio');
+      return;
+    }
 
     try {
       _session = await audio_session.AudioSession.instance;

@@ -1,34 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Production security configuration -->
-    <domain-config cleartextTrafficPermitted="false">
-        <!-- Your API domain -->
-        <domain includeSubdomains="true">vercelapi-gamma.vercel.app</domain>
-
-        <!-- Pin certificates for your API (optional but recommended) -->
-        <!-- Uncomment and add your certificate hashes when ready -->
-        <!--
-        <pin-set expiration="2027-01-01">
-            <pin digest="SHA-256">HASH_OF_YOUR_CERTIFICATE</pin>
-            <pin digest="SHA-256">BACKUP_CERTIFICATE_HASH</pin>
-        </pin-set>
-        -->
-    </domain-config>
-
-    <!-- Debug configuration - only for development -->
-    <debug-overrides>
-        <trust-anchors>
-            <!-- Trust user-added CAs for debugging -->
-            <certificates src="user" />
-            <certificates src="system" />
-        </trust-anchors>
-    </debug-overrides>
-
-    <!-- Base configuration - block cleartext traffic -->
-    <base-config cleartextTrafficPermitted="false">
+    <!--
+      base-config allows cleartext so youtube_explode_dart's local proxy
+      (http://127.0.0.1) works.  All real API / stream traffic is HTTPS
+      by design — the Dart code only ever constructs https:// URLs for
+      Saavn, YouTube, Piped, and Firebase endpoints.
+    -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Debug configuration -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="user" />
+            <certificates src="system" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>
 

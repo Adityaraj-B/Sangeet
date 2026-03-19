@@ -1,6 +1,6 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sangeet/utils/platform_utils.dart';
 
 /// Service to handle notification permission requests for Android 13+
 class NotificationPermissionService {
@@ -14,8 +14,8 @@ class NotificationPermissionService {
   /// Request notification permission (required for Android 13+)
   /// Returns true if permission is granted
   Future<bool> requestNotificationPermission() async {
-    // Only needed for Android
-    if (!Platform.isAndroid) return true;
+    // Only needed for Android - skip on desktop/iOS/web
+    if (!PlatformUtils.isAndroid) return true;
 
     // Don't request multiple times in same session
     if (_permissionRequested) {
@@ -52,7 +52,7 @@ class NotificationPermissionService {
 
   /// Check if notification permission is granted
   Future<bool> isNotificationPermissionGranted() async {
-    if (!Platform.isAndroid) return true;
+    if (!PlatformUtils.isAndroid) return true;
 
     try {
       return await Permission.notification.isGranted;
@@ -63,6 +63,7 @@ class NotificationPermissionService {
 
   /// Open app settings so user can enable notifications
   Future<bool> openNotificationSettings() async {
+    if (PlatformUtils.isDesktop) return false;
     return await openAppSettings();
   }
 }

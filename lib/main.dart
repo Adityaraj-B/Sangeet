@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:sangeet/constants.dart';
@@ -12,7 +13,9 @@ import 'package:sangeet/services/like_service.dart';
 import 'package:sangeet/services/audio_player_service.dart';
 import 'package:sangeet/services/audio_device_service.dart';
 import 'package:sangeet/services/notification_permission_service.dart';
-import 'dart:io';
+import 'package:sangeet/services/taste_profile_service.dart';
+import 'package:sangeet/utils/platform_utils.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'firebase_options.dart';
 
 // Global flag to track if audio service has been initialized in main
@@ -23,6 +26,7 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
 
   // Don't initialize audio service here - it needs the Activity to be ready
   // It will be initialized after the first frame is rendered
@@ -87,11 +91,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       debugPrint('Main: Error during shutdown: $e');
     }
 
-    // Force close the app completely
-    if (Platform.isAndroid) {
+    // Force close the app completely (not applicable on web)
+    if (!kIsWeb) {
       SystemNavigator.pop();
-    } else if (Platform.isIOS) {
-      exit(0);
     }
   }
 
@@ -102,6 +104,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       return;
     }
     _audioServiceInitStarted = true;
+
+    // Load cached taste profile immediately (fast, no API calls)
+    TasteProfileService().loadCached();
 
     // Wait for the first frame to ensure Activity is fully ready
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -131,6 +136,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'Sangeet Music App',
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const _DesktopScrollBehavior(),
       theme: ThemeData(
         fontFamily: 'PlayfairDisplay',
         brightness: Brightness.dark,
@@ -141,6 +147,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           builders: {
             TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
             TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
           },
         ),
       ),
@@ -187,3 +196,17 @@ class _SplashRouterState extends State<SplashRouter> {
     );
   }
 }
+
+/// Custom scroll behavior that enables mouse drag scrolling on desktop.
+/// This makes scrollable lists work naturally with mouse drag on desktop.
+class _DesktopScrollBehavior extends ScrollBehavior {
+  const _DesktopScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+      };
+}
+

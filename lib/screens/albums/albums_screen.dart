@@ -55,11 +55,13 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
     final queueService = QueueService();
 
-    // IMPORTANT: Add remaining songs to queue BEFORE playing
+    // Clear existing queue to avoid mixing old songs with album songs
+    queueService.clearQueue();
+
+    // Add remaining album songs to queue BEFORE playing
     // This ensures playSong() sees the manual queue and won't load similar songs
     if (songIndex >= 0 && songIndex < _songs.length - 1) {
       final remainingSongs = _songs.sublist(songIndex + 1);
-      // Add album songs to queue first
       queueService.addAllToQueue(remainingSongs);
     }
 
@@ -102,7 +104,11 @@ class _AlbumScreenState extends State<AlbumScreen> {
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.only(bottom: 120),
+              padding: EdgeInsets.only(
+                bottom: 120,
+                left: MediaQuery.of(context).size.width > 800 ? 28 : 0,
+                right: MediaQuery.of(context).size.width > 800 ? 28 : 0,
+              ),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                       (context, index) {

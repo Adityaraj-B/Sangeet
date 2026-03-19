@@ -35,13 +35,16 @@ class LibraryPlaylistsSection extends StatelessWidget {
     return Consumer<PlaylistProvider>(
       builder: (context, provider, _) {
         final playlists = provider.playlists;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isWide = screenWidth > 800;
+        final horizontalPad = isWide ? 28.0 : 20.0;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header Section
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: EdgeInsets.symmetric(horizontal: horizontalPad),
               child: Row(
                 children: [
                   const Text(
@@ -146,9 +149,9 @@ class LibraryPlaylistsSection extends StatelessWidget {
 
             // Horizontal List
             SizedBox(
-              height: 210, // Slightly increased height for shadows/spacing
+              height: isWide ? 230 : 210, // Slightly increased height for shadows/spacing
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 5),
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
                 itemCount: playlists.length + 1,

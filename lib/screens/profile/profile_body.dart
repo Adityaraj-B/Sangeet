@@ -11,6 +11,7 @@ import '../../services/playlist_service.dart';
 import '../sign_in/sign_in_body.dart';
 import '../playlist/components/playlist_screen.dart';
 import '../recent/recent_screen.dart';
+import '../spotify_import_screen.dart';
 import 'components/audio_quality.dart';
 import 'components/equalizer.dart';
 import 'components/liked_songs.dart';
@@ -275,13 +276,15 @@ class _ProfileBodyState extends State<ProfileBody>
               RecentlyPlayedScreen(onPlaySong: widget.onPlaySong),
             ),
           ),
-          // _buildItemDivider(),
-          // _MenuItem(
-          //   icon: Icons.download_rounded,
-          //   label: 'Downloads',
-          //   iconColor: const Color(0xFF6BFFB8),
-          //   onTap: () {},
-          // ),
+          _buildItemDivider(),
+          _MenuItem(
+            icon: Icons.download_rounded,
+            label: 'Import from Spotify',
+            iconColor: const Color(0xFF1DB954),
+            onTap: () => _navigate(
+              const SpotifyImportScreen(),
+            ),
+          ),
         ],
       ),
     );

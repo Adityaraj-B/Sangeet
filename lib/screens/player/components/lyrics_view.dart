@@ -7,12 +7,14 @@ class LyricsView extends StatefulWidget {
   final String? artist;
   final String? track;
   final Stream<Duration>? positionStream;
+  final bool isDesktop;
 
   const LyricsView({
     super.key,
     this.artist,
     this.track,
     this.positionStream,
+    this.isDesktop = false,
   });
 
   @override
@@ -33,6 +35,12 @@ class _LyricsViewState extends State<LyricsView> {
   // Estimated item height for scroll calculations
   static const double _itemHeight = 52.0; // approximate height per lyric line
   static const double _verticalPadding = 120.0;
+
+  double get _containerHeight => widget.isDesktop ? 420 : 280;
+  double get _effectiveVerticalPadding => widget.isDesktop ? 150 : _verticalPadding;
+  double get _horizontalPadding => widget.isDesktop ? 28 : 20;
+  Duration get _lineDuration =>
+      Duration(milliseconds: widget.isDesktop ? 320 : 250);
 
   @override
   void initState() {
@@ -153,7 +161,7 @@ class _LyricsViewState extends State<LyricsView> {
     if (isLargeJump) {
       // For large jumps, calculate position manually and jump without animation first
       // This ensures the target item gets built
-      final targetOffset = (index * _itemHeight) + _verticalPadding - (_scrollController.position.viewportDimension / 2) + (_itemHeight / 2);
+      final targetOffset = (index * _itemHeight) + _effectiveVerticalPadding - (_scrollController.position.viewportDimension / 2) + (_itemHeight / 2);
       final clampedOffset = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
 
       // Jump to approximate position first
@@ -212,7 +220,7 @@ class _LyricsViewState extends State<LyricsView> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          height: 280,
+          height: _containerHeight,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -329,9 +337,9 @@ class _LyricsViewState extends State<LyricsView> {
           blendMode: BlendMode.dstIn,
           child: ListView.builder(
             controller: _scrollController,
-            padding: const EdgeInsets.symmetric(
-              vertical: _verticalPadding,
-              horizontal: 20,
+            padding: EdgeInsets.symmetric(
+              vertical: _effectiveVerticalPadding,
+              horizontal: _horizontalPadding,
             ),
             itemCount: _lyrics.length,
             physics: const ClampingScrollPhysics(),
@@ -345,6 +353,8 @@ class _LyricsViewState extends State<LyricsView> {
                 text: line.text.isEmpty ? '♪' : line.text,
                 isCurrent: isCurrent,
                 isPast: isPast,
+                isDesktop: widget.isDesktop,
+                animationDuration: _lineDuration,
               );
             },
           ),
@@ -376,25 +386,32 @@ class _LyricLineWidget extends StatelessWidget {
   final String text;
   final bool isCurrent;
   final bool isPast;
+  final bool isDesktop;
+  final Duration animationDuration;
 
   const _LyricLineWidget({
     super.key,
     required this.text,
     required this.isCurrent,
     required this.isPast,
+    required this.isDesktop,
+    required this.animationDuration,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      padding: EdgeInsets.symmetric(
+        vertical: isDesktop ? 12 : 10,
+        horizontal: isDesktop ? 14 : 12,
+      ),
       child: AnimatedScale(
-        scale: isCurrent ? 1.15 : 1.0,
-        duration: const Duration(milliseconds: 250),
+        scale: isCurrent ? (isDesktop ? 1.18 : 1.15) : 1.0,
+        duration: animationDuration,
         curve: Curves.easeOutCubic,
         child: AnimatedOpacity(
           opacity: isCurrent ? 1.0 : (isPast ? 0.35 : 0.55),
-          duration: const Duration(milliseconds: 250),
+          duration: animationDuration,
           curve: Curves.easeOutCubic,
           child: Text(
             text,
@@ -403,16 +420,16 @@ class _LyricLineWidget extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: Colors.white,
-              fontSize: 20,
-              fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
+              fontSize: isDesktop ? 28 : 20,
+              fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w400,
               fontStyle: FontStyle.italic,
-              height: 1.4,
-              letterSpacing: 0.3,
+              height: isDesktop ? 1.35 : 1.4,
+              letterSpacing: isDesktop ? 0.25 : 0.3,
               shadows: isCurrent
                   ? [
                       Shadow(
                         color: Colors.black.withValues(alpha: 0.6),
-                        blurRadius: 14,
+                        blurRadius: isDesktop ? 18 : 14,
                         offset: const Offset(0, 2),
                       ),
                     ]

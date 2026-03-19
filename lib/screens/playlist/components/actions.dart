@@ -18,7 +18,8 @@ class PlaylistActions extends StatelessWidget {
   const PlaylistActions({super.key, required this.playlist});
 
   Future<void> _shufflePlaylist(BuildContext context) async {
-    final playlistSongs = context.read<PlaylistProvider>().getPlaylistSongs(playlist.id);
+    final playlistSongs =
+    context.read<PlaylistProvider>().getPlaylistSongs(playlist.id);
 
     if (playlistSongs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -30,24 +31,24 @@ class PlaylistActions extends StatelessWidget {
     final audioService = AudioPlayerService();
     final queueService = QueueService();
 
-    // Shuffle the songs
     final shuffledSongs = List<Song>.from(playlistSongs)..shuffle(Random());
 
-    // IMPORTANT: Add remaining songs to queue BEFORE playing
-    // This ensures playSong() sees the manual queue and won't load similar songs
+    // Clear any existing queue (auto-suggestions from a previous session)
+    // so the shuffled playlist plays in full without interference.
+    queueService.clearQueue();
+
     if (shuffledSongs.length > 1) {
       queueService.addAllToQueue(shuffledSongs.sublist(1));
     }
 
-    // Now play the first song
     await audioService.playSong(shuffledSongs.first);
 
-    // Open the player screen
     BodyState.instance?.openPlayerForCurrentSong();
   }
 
   Future<void> _playAllSongs(BuildContext context) async {
-    final playlistSongs = context.read<PlaylistProvider>().getPlaylistSongs(playlist.id);
+    final playlistSongs =
+    context.read<PlaylistProvider>().getPlaylistSongs(playlist.id);
 
     if (playlistSongs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -59,16 +60,16 @@ class PlaylistActions extends StatelessWidget {
     final audioService = AudioPlayerService();
     final queueService = QueueService();
 
-    // IMPORTANT: Add remaining songs to queue BEFORE playing
-    // This ensures playSong() sees the manual queue and won't load similar songs
+    // Clear any existing queue (auto-suggestions from a previous session)
+    // so the playlist plays in full order without old songs in front.
+    queueService.clearQueue();
+
     if (playlistSongs.length > 1) {
       queueService.addAllToQueue(playlistSongs.sublist(1));
     }
 
-    // Now play the first song
     await audioService.playSong(playlistSongs.first);
 
-    // Open the player screen
     BodyState.instance?.openPlayerForCurrentSong();
   }
 
@@ -103,61 +104,64 @@ class PlaylistActions extends StatelessWidget {
               children: [
                 // EDIT BUTTON
                 _ActionIcon(
-                    icon: Icons.edit_outlined,
-                    onTap: () async {
-                      // 1. Wait for result (Map<String, dynamic>)
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PlaylistEditScreen(playlist: playlist),
-                        ),
+                  icon: Icons.edit_outlined,
+                  onTap: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            PlaylistEditScreen(playlist: playlist),
+                      ),
+                    );
+
+                    if (result != null && result is Map && context.mounted) {
+                      final newTitle = result['title'] as String;
+                      final newSongs = result['songs'] as List<Song>;
+
+                      final updatedPlaylist = playlist.copyWith(
+                        title: newTitle,
+                        songs: newSongs,
+                        updatedAt: DateTime.now(),
                       );
 
-                      // 2. Check if result is valid
-                      if (result != null && result is Map && context.mounted) {
-                        final newTitle = result['title'] as String;
-                        final newSongs = result['songs'] as List<Song>;
-
-                        // 3. Update via Provider
-                        // We create a new copy of the playlist with BOTH title and songs updated
-                        final updatedPlaylist = playlist.copyWith(
-                          title: newTitle,
-                          songs: newSongs,
-                          updatedAt: DateTime.now(),
-                        );
-
-                        await context.read<PlaylistProvider>().updatePlaylist(updatedPlaylist);
-                      }
+                      await context
+                          .read<PlaylistProvider>()
+                          .updatePlaylist(updatedPlaylist);
                     }
+                  },
                 ),
                 const SizedBox(width: 8),
 
-                // MORE MENU (Delete/Hide)
+                // MORE MENU
                 PopupMenuButton<String>(
-                  icon: Icon(Icons.more_horiz, color: Colors.grey[400], size: 26),
+                  icon: Icon(Icons.more_horiz,
+                      color: Colors.grey[400], size: 26),
                   color: const Color(0xFF1E1E1E),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                   onSelected: (value) async {
                     if (value == 'delete') {
-                      // Navigate back first to avoid staying on loading screen
-                      if (context.mounted) Navigator.pop(context); // Close screen first
-                      // Then delete the playlist
-                      await context.read<PlaylistProvider>().deletePlaylist(playlist.id);
+                      if (context.mounted) Navigator.pop(context);
+                      await context
+                          .read<PlaylistProvider>()
+                          .deletePlaylist(playlist.id);
                     } else if (value == 'hide') {
-                      // Implement hide logic if your model supports it
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text("Playlist Hidden")),
                       );
                     }
                   },
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  itemBuilder: (BuildContext context) =>
+                  <PopupMenuEntry<String>>[
                     const PopupMenuItem<String>(
                       value: 'hide',
                       child: Row(
                         children: [
-                          Icon(Icons.visibility_off_outlined, color: Colors.white70),
+                          Icon(Icons.visibility_off_outlined,
+                              color: Colors.white70),
                           SizedBox(width: 12),
-                          Text('Hide Playlist', style: TextStyle(color: Colors.white)),
+                          Text('Hide Playlist',
+                              style: TextStyle(color: Colors.white)),
                         ],
                       ),
                     ),
@@ -165,9 +169,11 @@ class PlaylistActions extends StatelessWidget {
                       value: 'delete',
                       child: Row(
                         children: [
-                          Icon(Icons.delete_outline, color: Colors.redAccent),
+                          Icon(Icons.delete_outline,
+                              color: Colors.redAccent),
                           SizedBox(width: 12),
-                          Text('Delete Playlist', style: TextStyle(color: Colors.redAccent)),
+                          Text('Delete Playlist',
+                              style: TextStyle(color: Colors.redAccent)),
                         ],
                       ),
                     ),
@@ -192,7 +198,8 @@ class PlaylistActions extends StatelessWidget {
                   elevation: 0,
                   mini: false,
                   shape: const CircleBorder(),
-                  child: const Icon(Icons.play_arrow, color: Colors.black, size: 32),
+                  child: const Icon(Icons.play_arrow,
+                      color: Colors.black, size: 32),
                 ),
               ],
             ),

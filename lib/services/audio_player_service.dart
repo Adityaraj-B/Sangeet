@@ -7,110 +7,354 @@ import 'package:audio_session/audio_session.dart' as audio_session;
 import 'package:rxdart/rxdart.dart';
 import 'package:sangeet/services/queue.dart';
 import 'package:sangeet/services/recently_played.dart';
+import 'package:sangeet/services/music_service.dart';
+import 'package:sangeet/services/taste_profile_service.dart';
+import 'package:sangeet/utils/platform_utils.dart';
 import '../models/song.dart';
 
-// Top-level handler that persists across the app
 AudioHandler? _audioHandler;
 bool _audioHandlerInitialized = false;
+bool _audioInitialized = false;
 Completer<void>? _initializationCompleter;
 
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
   factory AudioPlayerService() => _instance;
-  AudioPlayerService._internal();
+  AudioPlayerService._internal() {
+    _bindPlayerStreams();
+  }
 
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  AudioPlayer _audioPlayer = AudioPlayer();
   final QueueService _queueService = QueueService();
   final RecentlyPlayedService _recentService = RecentlyPlayedService();
+
+  // ── Stable streams ───────────────────────────────────────────────────────
+  final BehaviorSubject<Duration> _positionSubject =
+  BehaviorSubject<Duration>.seeded(Duration.zero);
+  final BehaviorSubject<Duration?> _durationSubject =
+  BehaviorSubject<Duration?>.seeded(null);
+  final BehaviorSubject<PlayerState> _playerStateSubject =
+  BehaviorSubject<PlayerState>.seeded(
+      PlayerState(false, ProcessingState.idle));
+  final BehaviorSubject<bool> _playingSubject =
+  BehaviorSubject<bool>.seeded(false);
+
+  StreamSubscription<Duration>? _positionFwd;
+  StreamSubscription<Duration?>? _durationFwd;
+  StreamSubscription<PlayerState>? _playerStateFwd;
+  StreamSubscription<bool>? _playingFwd;
 
   StreamSubscription<PlayerState>? _completionSub;
   StreamSubscription<audio_session.AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _becomingNoisySub;
-  bool _handlingCompletion = false;
-  int _playOp = 0;
+
   bool _wasPlayingBeforeInterruption = false;
+
+  // Desktop: transition guard
+  bool _desktopTransitionInProgress = false;
+  Completer<void>? _transitionCompleter;
+
+  // Desktop player fields
+  double _lastVolume = 1.0;
+  LoopMode _lastLoopMode = LoopMode.off;
+
+  final ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(
+    useLazyPreparation: true,
+    children: [],
+  );
+  bool _playlistInitialized = false;
 
   AudioPlayer get player => _audioPlayer;
   Song? get currentSong => _queueService.currentSong;
   QueueService get queue => _queueService;
 
-  Stream<Duration> get positionStream => _audioPlayer.positionStream;
-  Stream<Duration?> get durationStream => _audioPlayer.durationStream;
-  Stream<PlayerState> get playerStateStream => _audioPlayer.playerStateStream;
-  Stream<bool> get playingStream => _audioPlayer.playingStream;
+  Stream<Duration> get positionStream => _positionSubject.stream;
+  Stream<Duration?> get durationStream => _durationSubject.stream;
+  Stream<PlayerState> get playerStateStream => _playerStateSubject.stream;
+  Stream<bool> get playingStream => _playingSubject.stream;
 
   bool get isPlaying => _audioPlayer.playing;
   Duration get currentPosition => _audioPlayer.position;
   Duration? get totalDuration => _audioPlayer.duration;
 
-  /// Initialize audio service - call this early in app lifecycle
-  Future<void> initialize() async {
-    // If already initialized, return immediately
-    if (_audioHandlerInitialized && _audioHandler != null) {
-      debugPrint('AudioPlayerService: Already initialized');
-      return;
-    }
+  void _bindPlayerStreams() {
+    _positionFwd?.cancel();
+    _durationFwd?.cancel();
+    _playerStateFwd?.cancel();
+    _playingFwd?.cancel();
 
-    // If initialization is in progress, wait for it to complete
+    _positionSubject.add(_audioPlayer.position);
+    _durationSubject.add(_audioPlayer.duration);
+    _playerStateSubject.add(_audioPlayer.playerState);
+    _playingSubject.add(_audioPlayer.playing);
+
+    _positionFwd = _audioPlayer.positionStream.listen(_positionSubject.add);
+    _durationFwd = _audioPlayer.durationStream.listen(_durationSubject.add);
+    _playerStateFwd =
+        _audioPlayer.playerStateStream.listen(_playerStateSubject.add);
+    _playingFwd = _audioPlayer.playingStream.listen(_playingSubject.add);
+  }
+
+  // ── Initialization ───────────────────────────────────────────────────────
+
+  Future<void> initialize() async {
+    if (_audioInitialized) return;
+
     if (_initializationCompleter != null) {
-      debugPrint('AudioPlayerService: Initialization in progress, waiting...');
       try {
         await _initializationCompleter!.future;
         return;
-      } catch (e) {
-        // Previous initialization failed, we'll try again
-        debugPrint('AudioPlayerService: Previous initialization failed: $e');
-      }
+      } catch (_) {}
     }
 
-    // Create a new completer for this initialization attempt
     _initializationCompleter = Completer<void>();
 
     try {
-      debugPrint('AudioPlayerService: Initializing audio service...');
-      _audioHandler = await AudioService.init(
-        builder: () => _AudioPlayerHandler(_audioPlayer, this),
-        config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.example.sangeet.audio',
-          androidNotificationChannelName: 'Sangeet Music',
-          androidNotificationChannelDescription: 'Music playback controls',
-          androidNotificationIcon: 'drawable/ic_notification',
-          androidShowNotificationBadge: true,
-          androidNotificationOngoing: false,
-          androidStopForegroundOnPause: true,
-          artDownscaleWidth: 300,
-          artDownscaleHeight: 300,
-          notificationColor: Color(0xFFE6D690),
-          fastForwardInterval: Duration(seconds: 10),
-          rewindInterval: Duration(seconds: 10),
-          preloadArtwork: true,
-        ),
-      );
-      _audioHandlerInitialized = true;
+      if (PlatformUtils.isMobile) {
+        _audioHandler = await AudioService.init(
+          builder: () => _AudioPlayerHandler(_audioPlayer, this),
+          config: const AudioServiceConfig(
+            androidNotificationChannelId: 'com.example.sangeet.audio',
+            androidNotificationChannelName: 'Sangeet Music',
+            androidNotificationChannelDescription: 'Music playback controls',
+            androidNotificationIcon: 'drawable/ic_notification',
+            androidShowNotificationBadge: true,
+            androidNotificationOngoing: false,
+            androidStopForegroundOnPause: true,
+            artDownscaleWidth: 300,
+            artDownscaleHeight: 300,
+            notificationColor: Color(0xFFE6D690),
+            fastForwardInterval: Duration(seconds: 10),
+            rewindInterval: Duration(seconds: 10),
+            preloadArtwork: true,
+          ),
+        );
+        _audioHandlerInitialized = true;
+      } else {
+        debugPrint('AudioPlayerService: Desktop — skipping AudioService.init');
+        _audioHandlerInitialized = false;
+      }
+
       _setupCompletionListener();
-      await _setupAudioInterruptionHandling();
+
+      if (PlatformUtils.isMobile) {
+        await _setupAudioInterruptionHandling();
+      }
+
+      _audioInitialized = true;
       _initializationCompleter!.complete();
-      debugPrint('AudioPlayerService: Audio service initialized successfully');
-    } catch (e, stackTrace) {
-      debugPrint('AudioPlayerService: Failed to initialize audio service: $e');
-      debugPrint('AudioPlayerService: Stack trace: $stackTrace');
+      debugPrint('AudioPlayerService: initialized');
+    } catch (e, st) {
+      debugPrint('AudioPlayerService: init failed: $e\n$st');
       _audioHandlerInitialized = false;
+      _audioInitialized = false;
       _audioHandler = null;
       _initializationCompleter!.completeError(e);
-      _initializationCompleter = null; // Allow retry
+      _initializationCompleter = null;
       rethrow;
     }
   }
 
-  void _updateMediaItem(Song song) {
-    if (!_audioHandlerInitialized || _audioHandler == null) {
-      debugPrint('AudioPlayerService: Cannot update media item - handler not initialized');
+  // ── Desktop playlist helpers ─────────────────────────────────────────────
+
+  Future<void> _ensurePlaylistInitialized() async {
+    if (_playlistInitialized) return;
+    _playlistInitialized = true;
+    await _audioPlayer.setAudioSource(_playlist, preload: false);
+  }
+
+  Future<void> _swapTrack(AudioSource source) async {
+    await _ensurePlaylistInitialized();
+    await _playlist.clear();
+    await _playlist.add(source);
+    await _audioPlayer.seek(Duration.zero, index: 0);
+  }
+
+  Future<void> _recreateWindowsPlayer() async {
+    if (!PlatformUtils.isWindows) return;
+
+    final oldPlayer = _audioPlayer;
+    _completionSub?.cancel();
+    _positionFwd?.cancel();
+    _durationFwd?.cancel();
+    _playerStateFwd?.cancel();
+    _playingFwd?.cancel();
+
+    try { await oldPlayer.stop(); } catch (_) {}
+    try { await oldPlayer.dispose(); } catch (_) {}
+
+    _audioPlayer = AudioPlayer();
+    try {
+      await _audioPlayer.setVolume(_lastVolume);
+      await _audioPlayer.setLoopMode(_lastLoopMode);
+    } catch (_) {}
+
+    _bindPlayerStreams();
+    _setupCompletionListener();
+  }
+
+  // ── Completion listener ──────────────────────────────────────────────────
+  //
+  // On mobile: cancelled before stop() and re-subscribed after setUrl().
+  // After setUrl() the player is in `loading` state (not `completed`), so
+  // the BehaviorSubject does NOT replay a stale `completed` event to the
+  // new subscriber. The new subscriber only sees genuine end-of-song events.
+  //
+  // On desktop: uses _desktopTransitionInProgress flag as before.
+
+  void _setupCompletionListener() {
+    _completionSub?.cancel();
+    _completionSub = _audioPlayer.playerStateStream.listen((state) async {
+      if (state.processingState != ProcessingState.completed) return;
+      if (!PlatformUtils.isMobile && _desktopTransitionInProgress) return;
+
+      debugPrint('AudioPlayerService: song ended naturally, advancing…');
+      await _advanceToNextSong();
+    });
+  }
+
+  // ── Advance to next song ─────────────────────────────────────────────────
+
+  Future<void> _advanceToNextSong() async {
+    // Cancel the completion listener immediately so re-entrancy is impossible.
+    // It will be re-attached inside _mobilePlaySong after setUrl().
+    if (PlatformUtils.isMobile) {
+      _completionSub?.cancel();
+      _completionSub = null;
+    }
+
+    if (!_queueService.hasNext && _queueService.isLoadingSimilar) {
+      debugPrint('AudioPlayerService: queue empty but loading, waiting…');
+      const pollInterval = Duration(milliseconds: 200);
+      const maxWait = Duration(seconds: 8);
+      var waited = Duration.zero;
+      while (_queueService.isLoadingSimilar && waited < maxWait) {
+        await Future.delayed(pollInterval);
+        waited += pollInterval;
+      }
+    }
+
+    Song? nextSong = await _queueService.playNext();
+
+    if (nextSong == null) {
+      final current = _queueService.currentSong;
+      if (current != null) {
+        await _queueService.loadMoreSimilar(current);
+        nextSong = await _queueService.playNext();
+      }
+    }
+
+    if (nextSong == null) {
+      debugPrint('AudioPlayerService: queue empty, stopping');
+      // Re-attach listener so future plays work (e.g. user adds songs manually)
+      if (PlatformUtils.isMobile) _setupCompletionListener();
       return;
     }
 
-    try {
-      debugPrint('AudioPlayerService: Updating media item for: ${song.title}');
+    debugPrint('AudioPlayerService: auto-advancing to ${nextSong.title}');
 
+    if (PlatformUtils.isMobile) {
+      await _mobilePlaySong(nextSong);
+    } else {
+      await _withTransitionLock(() => _desktopPlaySong(nextSong!));
+    }
+  }
+
+  // ── Mobile play ──────────────────────────────────────────────────────────
+
+  Future<bool> _mobilePlaySong(Song song) async {
+    final src = song.streamUrl;
+    if (src == null || src.isEmpty) {
+      debugPrint(
+          'AudioPlayerService: [mobile] no stream URL for ${song.title}');
+      if (_completionSub == null) _setupCompletionListener();
+      return false;
+    }
+
+    try { await _recentService.addSong(song); } catch (_) {}
+    TasteProfileService().rebuildProfile(recentService: _recentService);
+
+    // Cancel listener before stop() so the stop()-induced `completed` event
+    // is never delivered. The listener doesn't exist during the transition.
+    _completionSub?.cancel();
+    _completionSub = null;
+
+    try {
+      await _audioPlayer.stop();
+
+      // After stop(), player is in `idle` state.
+      await _audioPlayer.setUrl(src);
+
+      // After setUrl(), player is in `loading` state — NOT `completed`.
+      // It is now safe to re-subscribe: the BehaviorSubject will replay
+      // `loading`, not `completed`, so no phantom advance fires.
+      _setupCompletionListener();
+
+      if (_audioHandlerInitialized) _updateMediaItem(song);
+      await _audioPlayer.play();
+
+      debugPrint('AudioPlayerService: [mobile] playing ${song.title}');
+      return true;
+    } catch (e) {
+      // Always ensure listener is attached even on error.
+      if (_completionSub == null) _setupCompletionListener();
+      debugPrint('AudioPlayerService: [mobile] error: $e');
+      return false;
+    }
+  }
+
+  // ── Desktop play ─────────────────────────────────────────────────────────
+
+  Future<bool> _desktopPlaySong(Song song) async {
+    final audioSource = await _getDesktopSource(song);
+    if (audioSource == null) return false;
+
+    _desktopTransitionInProgress = true;
+    try {
+      if (PlatformUtils.isWindows) {
+        await _recreateWindowsPlayer();
+        await _audioPlayer.setAudioSource(audioSource, preload: true);
+      } else {
+        await _swapTrack(audioSource);
+      }
+      if (_audioHandlerInitialized) _updateMediaItem(song);
+      await _audioPlayer.play();
+      debugPrint('AudioPlayerService: [desktop] playing ${song.title}');
+      return true;
+    } catch (e) {
+      debugPrint('AudioPlayerService: [desktop] error: $e');
+      return false;
+    } finally {
+      _desktopTransitionInProgress = false;
+    }
+  }
+
+  Future<AudioSource?> _getDesktopSource(Song song) async {
+    try {
+      return await MusicService().getAudioSource(song);
+    } catch (e) {
+      debugPrint('AudioPlayerService: _getDesktopSource error: $e');
+      return null;
+    }
+  }
+
+  Future<T> _withTransitionLock<T>(Future<T> Function() action) async {
+    final previous = _transitionCompleter?.future;
+    final mine = Completer<void>();
+    _transitionCompleter = mine;
+    if (previous != null) await previous.catchError((_) {});
+    try {
+      return await action();
+    } finally {
+      if (!mine.isCompleted) mine.complete();
+    }
+  }
+
+  // ── Media item update ────────────────────────────────────────────────────
+
+  void _updateMediaItem(Song song) {
+    if (!_audioHandlerInitialized || _audioHandler == null) return;
+    try {
       final mediaItem = MediaItem(
         id: song.id,
         album: 'Sangeet',
@@ -119,13 +363,8 @@ class AudioPlayerService {
         duration: song.duration,
         artUri: song.coverUrl.isNotEmpty ? Uri.parse(song.coverUrl) : null,
       );
-
       final handler = _audioHandler as _AudioPlayerHandler;
-
-      // Update media item
       handler.mediaItem.add(mediaItem);
-
-      // Update playback state with duration
       final currentState = handler.playbackState.value;
       handler.playbackState.add(currentState.copyWith(
         controls: [
@@ -145,215 +384,93 @@ class AudioPlayerService {
         bufferedPosition: Duration.zero,
         speed: 1.0,
       ));
-
-      debugPrint('AudioPlayerService: Media item and playback state updated');
     } catch (e) {
-      debugPrint('AudioPlayerService: Error updating media item: $e');
+      debugPrint('AudioPlayerService: _updateMediaItem error: $e');
     }
   }
 
-  /// Plays a song. If same song is already current, resumes if paused.
+  // ── playSong ─────────────────────────────────────────────────────────────
+
   Future<bool> playSong(Song song) async {
-    debugPrint('AudioPlayerService: playSong called for: ${song.title}');
+    debugPrint('AudioPlayerService: playSong: ${song.title}');
 
-    // Try to initialize if not already initialized
-    if (!_audioHandlerInitialized) {
-      debugPrint('AudioPlayerService: Not initialized, attempting initialization...');
-      try {
-        await initialize();
-      } catch (e) {
-        debugPrint('AudioPlayerService: Initialization failed: $e');
-        // Continue anyway - try to play without notification
+    if (!_audioInitialized) {
+      try { await initialize(); } catch (e) {
+        debugPrint('AudioPlayerService: init failed: $e');
       }
-    }
-
-    if (song.streamUrl == null || song.streamUrl!.isEmpty) {
-      debugPrint('AudioPlayerService: Cannot play song - no stream URL');
-      return false;
     }
 
     final current = _queueService.currentSong;
     if (current != null && current.id == song.id) {
-      debugPrint('AudioPlayerService: Same song, resuming if paused');
-      if (!_audioPlayer.playing) {
-        await _audioPlayer.play();
-      }
+      if (!_audioPlayer.playing) await _audioPlayer.play();
       return true;
     }
 
-    final op = ++_playOp;
-
-    await _recentService.addSong(song);
-    await _queueService.playSong(song);
-
-    if (op != _playOp) {
-      debugPrint('AudioPlayerService: Operation cancelled');
+    try {
+      await _queueService.playSong(song);
+    } catch (e) {
+      debugPrint('AudioPlayerService: queue update failed: $e');
       return false;
     }
 
-    try {
-      await _audioPlayer.stop();
-
-      if (op != _playOp) return false;
-
-      debugPrint('AudioPlayerService: Setting URL: ${song.streamUrl}');
-      await _audioPlayer.setUrl(song.streamUrl!);
-
-      if (op != _playOp) return false;
-
-      // Only update media item if handler is initialized
-      if (_audioHandlerInitialized) {
-        _updateMediaItem(song);
-      }
-
-      debugPrint('AudioPlayerService: Starting playback');
-      await _audioPlayer.play();
-
-      debugPrint('AudioPlayerService: Playback started successfully');
-      return true;
-    } catch (e) {
-      debugPrint('AudioPlayerService: Error playing song: $e');
-      return false;
+    if (PlatformUtils.isMobile) {
+      return _mobilePlaySong(song);
+    } else {
+      return _withTransitionLock(() => _desktopPlaySong(song));
     }
   }
 
-  void _setupCompletionListener() {
-    _completionSub?.cancel();
-    _completionSub = null;
-
-    _completionSub = _audioPlayer.playerStateStream.listen((state) async {
-      if (state.processingState != ProcessingState.completed) return;
-
-      if (_handlingCompletion) return;
-
-      _handlingCompletion = true;
-      try {
-        await playNext();
-      } catch (e) {
-        debugPrint('AudioPlayerService: Error in completion handler: $e');
-      } finally {
-        _handlingCompletion = false;
-      }
-    });
-  }
-
-  /// Setup audio interruption handling for device changes
-  Future<void> _setupAudioInterruptionHandling() async {
-    try {
-      final session = await audio_session.AudioSession.instance;
-
-      // Configure for music with Bluetooth support
-      await session.configure(const audio_session.AudioSessionConfiguration(
-        avAudioSessionCategory: audio_session.AVAudioSessionCategory.playback,
-        avAudioSessionCategoryOptions: audio_session.AVAudioSessionCategoryOptions.allowBluetooth,
-        avAudioSessionMode: audio_session.AVAudioSessionMode.defaultMode,
-        androidAudioAttributes: audio_session.AndroidAudioAttributes(
-          contentType: audio_session.AndroidAudioContentType.music,
-          usage: audio_session.AndroidAudioUsage.media,
-        ),
-        androidAudioFocusGainType: audio_session.AndroidAudioFocusGainType.gain,
-        androidWillPauseWhenDucked: false,
-      ));
-
-      // Handle audio interruptions (phone calls, other apps, device changes)
-      _interruptionSub?.cancel();
-      _interruptionSub = session.interruptionEventStream.listen((event) {
-        debugPrint('AudioPlayerService: Interruption: begin=${event.begin}, type=${event.type}');
-
-        if (event.begin) {
-          // Interruption started
-          switch (event.type) {
-            case audio_session.AudioInterruptionType.duck:
-              // Lower volume temporarily (don't pause)
-              _audioPlayer.setVolume(0.4);
-              break;
-            case audio_session.AudioInterruptionType.pause:
-              // Temporary pause (like phone call) - remember state
-              _wasPlayingBeforeInterruption = _audioPlayer.playing;
-              if (_wasPlayingBeforeInterruption) {
-                _audioPlayer.pause();
-              }
-              break;
-            case audio_session.AudioInterruptionType.unknown:
-              // Device change or unknown - don't pause, just refresh
-              debugPrint('AudioPlayerService: Unknown interruption - likely device change');
-              break;
-          }
-        } else {
-          // Interruption ended
-          switch (event.type) {
-            case audio_session.AudioInterruptionType.duck:
-              // Restore volume
-              _audioPlayer.setVolume(1.0);
-              break;
-            case audio_session.AudioInterruptionType.pause:
-              // Resume if was playing before
-              if (_wasPlayingBeforeInterruption) {
-                _audioPlayer.play();
-              }
-              break;
-            case audio_session.AudioInterruptionType.unknown:
-              // Continue playing on device change
-              break;
-          }
-        }
-      });
-
-      // Handle becoming noisy (headphones unplugged)
-      _becomingNoisySub?.cancel();
-      _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
-        debugPrint('AudioPlayerService: Becoming noisy - headphones unplugged');
-        // Pause when headphones are unplugged (standard behavior)
-        _audioPlayer.pause();
-      });
-
-      debugPrint('AudioPlayerService: Audio interruption handling setup complete');
-    } catch (e) {
-      debugPrint('AudioPlayerService: Failed to setup interruption handling: $e');
-    }
-  }
+  // ── Playback controls ────────────────────────────────────────────────────
 
   Future<void> togglePlayPause() async {
     if (_audioPlayer.playing) {
       await _audioPlayer.pause();
-    } else {
-      // Check if audio source is loaded, if not load it from current song
-      final song = _queueService.currentSong;
-      if (song == null) {
-        debugPrint('AudioPlayerService: No current song to play');
-        return;
-      }
-
-      // If player is idle or completed, we need to load the URL
-      if (_audioPlayer.processingState == ProcessingState.idle ||
-          _audioPlayer.processingState == ProcessingState.completed) {
-        if (song.streamUrl == null || song.streamUrl!.isEmpty) {
-          debugPrint('AudioPlayerService: No stream URL for song: ${song.title}');
-          return;
-        }
-
-        try {
-          debugPrint('AudioPlayerService: Loading URL for: ${song.title}');
-          await _audioPlayer.setUrl(song.streamUrl!);
-          if (_audioHandlerInitialized) {
-            _updateMediaItem(song);
-          }
-          _setupCompletionListener(); // Ensure completion listener is set
-        } catch (e) {
-          debugPrint('AudioPlayerService: Error loading URL: $e');
-          return;
-        }
-      }
-
-      await _audioPlayer.play();
+      return;
     }
+
+    final song = _queueService.currentSong;
+    if (song == null) return;
+
+    if (_audioPlayer.processingState == ProcessingState.idle ||
+        _audioPlayer.processingState == ProcessingState.completed) {
+      if (PlatformUtils.isMobile) {
+        await _audioPlayer.play();
+      } else {
+        await _withTransitionLock(() => _desktopPlaySong(song));
+      }
+      return;
+    }
+
+    await _audioPlayer.play();
   }
 
-  Future<void> play() async => _audioPlayer.play();
+  Future<void> play() async {
+    if (_audioPlayer.playing) return;
+
+    final song = _queueService.currentSong;
+    if (song == null) return;
+
+    if (_audioPlayer.processingState == ProcessingState.idle ||
+        _audioPlayer.processingState == ProcessingState.completed) {
+      if (PlatformUtils.isMobile) {
+        await _audioPlayer.play();
+      } else {
+        await _withTransitionLock(() => _desktopPlaySong(song));
+      }
+      return;
+    }
+
+    await _audioPlayer.play();
+  }
+
   Future<void> pause() async => _audioPlayer.pause();
+
   Future<void> stop() async {
-    await _audioPlayer.stop();
-    // Clear the notification by updating state to idle
+    try {
+      await _audioPlayer.pause();
+    } catch (e) {
+      debugPrint('AudioPlayerService: stop() error: $e');
+    }
     if (_audioHandlerInitialized && _audioHandler != null) {
       final handler = _audioHandler as _AudioPlayerHandler;
       handler.playbackState.add(PlaybackState(
@@ -366,52 +483,9 @@ class AudioPlayerService {
     }
   }
 
-  /// Fully shutdown audio service - call when app is being closed
-  Future<void> shutdown() async {
-    await stop();
-    await _completionSub?.cancel();
-    _completionSub = null;
-    await _interruptionSub?.cancel();
-    _interruptionSub = null;
-    await _becomingNoisySub?.cancel();
-    _becomingNoisySub = null;
-
-    // Stop the audio service to remove notification
-    if (_audioHandlerInitialized && _audioHandler != null) {
-      try {
-        await _audioHandler!.stop();
-      } catch (e) {
-        debugPrint('AudioPlayerService: Error stopping handler: $e');
-      }
-    }
-
-    await _audioPlayer.dispose();
-    _audioHandlerInitialized = false;
-    _audioHandler = null;
-    _initializationCompleter = null;
-  }
   Future<void> seek(Duration position) async => _audioPlayer.seek(position);
 
   Future<void> playNext() async {
-    // If nothing is playing but we have a current song (after app restart), play it first
-    if (_audioPlayer.processingState == ProcessingState.idle &&
-        _queueService.currentSong != null &&
-        !_audioPlayer.playing) {
-      final currentSong = _queueService.currentSong!;
-      if (currentSong.streamUrl != null && currentSong.streamUrl!.isNotEmpty) {
-        try {
-          await _audioPlayer.setUrl(currentSong.streamUrl!);
-          if (_audioHandlerInitialized) {
-            _updateMediaItem(currentSong);
-          }
-          await _audioPlayer.play();
-          return;
-        } catch (e) {
-          debugPrint('AudioPlayerService: Error playing current song: $e');
-        }
-      }
-    }
-
     Song? nextSong = await _queueService.playNext();
 
     if (nextSong == null) {
@@ -422,122 +496,162 @@ class AudioPlayerService {
       }
     }
 
-    if (nextSong == null || nextSong.streamUrl?.isEmpty == true) return;
+    if (nextSong == null) return;
 
-    await _recentService.addSong(nextSong);
-
-    try {
-      await _audioPlayer.setUrl(nextSong.streamUrl!);
-      if (_audioHandlerInitialized) {
-        _updateMediaItem(nextSong);
-      }
-      await _audioPlayer.play();
-    } catch (e) {
-      debugPrint('AudioPlayerService: Error playing next: $e');
+    if (PlatformUtils.isMobile) {
+      await _mobilePlaySong(nextSong);
+    } else {
+      await _withTransitionLock(() => _desktopPlaySong(nextSong!));
     }
   }
 
   Future<void> playPrevious() async {
-    // If nothing is playing but we have a current song (after app restart), play it
-    if (_audioPlayer.processingState == ProcessingState.idle &&
-        _queueService.currentSong != null &&
-        !_audioPlayer.playing) {
-      final currentSong = _queueService.currentSong!;
-      if (currentSong.streamUrl != null && currentSong.streamUrl!.isNotEmpty) {
-        try {
-          await _audioPlayer.setUrl(currentSong.streamUrl!);
-          if (_audioHandlerInitialized) {
-            _updateMediaItem(currentSong);
-          }
-          await _audioPlayer.play();
-          return;
-        } catch (e) {
-          debugPrint('AudioPlayerService: Error playing current song: $e');
-        }
-      }
-    }
-
     if (_audioPlayer.position.inSeconds > 3) {
       await seek(Duration.zero);
       return;
     }
 
-    final previousSong = _queueService.playPrevious();
-    if (previousSong == null || previousSong.streamUrl?.isEmpty == true) return;
+    final prev = _queueService.playPrevious();
+    if (prev == null) return;
 
-    try {
-      await _audioPlayer.stop();
-      await _audioPlayer.setUrl(previousSong.streamUrl!);
-      if (_audioHandlerInitialized) {
-        _updateMediaItem(previousSong);
-      }
-      await _audioPlayer.play();
-    } catch (e) {
-      debugPrint('AudioPlayerService: Error playing previous: $e');
+    if (PlatformUtils.isMobile) {
+      await _mobilePlaySong(prev);
+    } else {
+      await _withTransitionLock(() => _desktopPlaySong(prev));
+    }
+  }
+
+  Future<void> skipToQueueItem(int index) async {
+    final song = await _queueService.skipToQueueItem(index);
+    if (song == null) return;
+
+    if (PlatformUtils.isMobile) {
+      await _mobilePlaySong(song);
+    } else {
+      await _withTransitionLock(() => _desktopPlaySong(song));
+    }
+  }
+
+  Future<void> playFromHistory(Song song) async {
+    final result = await _queueService.playFromHistory(song);
+    if (result == null) return;
+
+    if (PlatformUtils.isMobile) {
+      await _mobilePlaySong(result);
+    } else {
+      await _withTransitionLock(() => _desktopPlaySong(result));
     }
   }
 
   void addToQueue(Song song) => _queueService.addToQueue(song);
   void playNextInQueue(Song song) => _queueService.playNextInQueue(song);
 
-  /// Skip to a specific position in the queue and start playing
-  Future<void> skipToQueueItem(int index) async {
-    final song = await _queueService.skipToQueueItem(index);
-    if (song == null || song.streamUrl?.isEmpty == true) return;
-
-    await _recentService.addSong(song);
-
-    try {
-      await _audioPlayer.stop();
-      await _audioPlayer.setUrl(song.streamUrl!);
-      if (_audioHandlerInitialized) {
-        _updateMediaItem(song);
-      }
-      await _audioPlayer.play();
-    } catch (e) {
-      debugPrint('AudioPlayerService: Error skipping to queue item: $e');
-    }
+  Future<void> setLoopMode(LoopMode mode) async {
+    _lastLoopMode = mode;
+    await _audioPlayer.setLoopMode(mode);
   }
-
-  /// Play a song from history
-  Future<void> playFromHistory(Song song) async {
-    final resultSong = await _queueService.playFromHistory(song);
-    if (resultSong == null || resultSong.streamUrl?.isEmpty == true) return;
-
-    await _recentService.addSong(resultSong);
-
-    try {
-      await _audioPlayer.stop();
-      await _audioPlayer.setUrl(resultSong.streamUrl!);
-      if (_audioHandlerInitialized) {
-        _updateMediaItem(resultSong);
-      }
-      await _audioPlayer.play();
-    } catch (e) {
-      debugPrint('AudioPlayerService: Error playing from history: $e');
-    }
-  }
-
-  Future<void> setLoopMode(LoopMode mode) async => _audioPlayer.setLoopMode(mode);
 
   Future<void> setShuffleMode(bool enabled) async {
     if (enabled) _queueService.shuffleQueue();
   }
 
-  Future<void> setVolume(double volume) async => _audioPlayer.setVolume(volume.clamp(0.0, 1.0));
-
-  Future<void> dispose() async {
-    // For backwards compatibility - just call shutdown
-    await shutdown();
+  Future<void> setVolume(double volume) async {
+    _lastVolume = volume.clamp(0.0, 1.0);
+    await _audioPlayer.setVolume(_lastVolume);
   }
+
+  // ── Audio interruption handling (mobile only) ────────────────────────────
+
+  Future<void> _setupAudioInterruptionHandling() async {
+    try {
+      final session = await audio_session.AudioSession.instance;
+      await session.configure(
+        const audio_session.AudioSessionConfiguration(
+          avAudioSessionCategory:
+          audio_session.AVAudioSessionCategory.playback,
+          avAudioSessionCategoryOptions:
+          audio_session.AVAudioSessionCategoryOptions.allowBluetooth,
+          avAudioSessionMode: audio_session.AVAudioSessionMode.defaultMode,
+          androidAudioAttributes: audio_session.AndroidAudioAttributes(
+            contentType: audio_session.AndroidAudioContentType.music,
+            usage: audio_session.AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType:
+          audio_session.AndroidAudioFocusGainType.gain,
+          androidWillPauseWhenDucked: false,
+        ),
+      );
+
+      _interruptionSub?.cancel();
+      _interruptionSub = session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          switch (event.type) {
+            case audio_session.AudioInterruptionType.duck:
+              _audioPlayer.setVolume(0.4);
+            case audio_session.AudioInterruptionType.pause:
+              _wasPlayingBeforeInterruption = _audioPlayer.playing;
+              if (_wasPlayingBeforeInterruption) _audioPlayer.pause();
+            case audio_session.AudioInterruptionType.unknown:
+              break;
+          }
+        } else {
+          switch (event.type) {
+            case audio_session.AudioInterruptionType.duck:
+              _audioPlayer.setVolume(1.0);
+            case audio_session.AudioInterruptionType.pause:
+              if (_wasPlayingBeforeInterruption) _audioPlayer.play();
+            case audio_session.AudioInterruptionType.unknown:
+              break;
+          }
+        }
+      });
+
+      _becomingNoisySub?.cancel();
+      _becomingNoisySub =
+          session.becomingNoisyEventStream.listen((_) => _audioPlayer.pause());
+    } catch (e) {
+      debugPrint('AudioPlayerService: interruption setup failed: $e');
+    }
+  }
+
+  // ── Shutdown ─────────────────────────────────────────────────────────────
+
+  Future<void> shutdown() async {
+    await stop();
+    _completionSub?.cancel();
+    _interruptionSub?.cancel();
+    _becomingNoisySub?.cancel();
+    _positionFwd?.cancel();
+    _durationFwd?.cancel();
+    _playerStateFwd?.cancel();
+    _playingFwd?.cancel();
+
+    if (_audioHandlerInitialized && _audioHandler != null) {
+      try { await _audioHandler!.stop(); } catch (_) {}
+    }
+
+    try { await _audioPlayer.dispose(); } catch (_) {}
+
+    _audioHandlerInitialized = false;
+    _audioInitialized = false;
+    _audioHandler = null;
+    _initializationCompleter = null;
+    _playlistInitialized = false;
+  }
+
+  Future<void> dispose() async => shutdown();
 }
 
-// Audio Handler for media notifications
+// ── Media notification handler (mobile only) ─────────────────────────────────
+
 class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player;
   final AudioPlayerService _service;
-  final BehaviorSubject<MediaItem?> _mediaItemSubject = BehaviorSubject<MediaItem?>();
-  final BehaviorSubject<PlaybackState> _playbackStateSubject = BehaviorSubject<PlaybackState>.seeded(
+
+  final BehaviorSubject<MediaItem?> _mediaItemSubject =
+  BehaviorSubject<MediaItem?>();
+  final BehaviorSubject<PlaybackState> _playbackStateSubject =
+  BehaviorSubject<PlaybackState>.seeded(
     PlaybackState(
       controls: [
         MediaControl.skipToPrevious,
@@ -555,32 +669,24 @@ class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     ),
   );
 
-  StreamSubscription<Duration>? _positionSubscription;
-  StreamSubscription<bool>? _playingSubscription;
-
-  // Throttle position updates to reduce lag
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<bool>? _playingSub;
   DateTime _lastPositionUpdate = DateTime.now();
   static const _positionUpdateInterval = Duration(seconds: 1);
 
   _AudioPlayerHandler(this._player, this._service) {
-    debugPrint('_AudioPlayerHandler: Constructor called, setting up listeners...');
-
-    // Listen to position changes - throttled
-    _positionSubscription = _player.positionStream.listen((position) {
+    _positionSub = _player.positionStream.listen((position) {
       final now = DateTime.now();
       if (now.difference(_lastPositionUpdate) >= _positionUpdateInterval) {
         _lastPositionUpdate = now;
-        _updatePosition(position);
+        final current = _playbackStateSubject.value;
+        _playbackStateSubject.add(current.copyWith(updatePosition: position));
       }
     });
 
-    // Listen to playing state changes
-    _playingSubscription = _player.playingStream.listen((playing) {
-      debugPrint('_AudioPlayerHandler: Playing state changed to: $playing');
+    _playingSub = _player.playingStream.listen((playing) {
       updatePlaybackStateForNotification(playing: playing);
     });
-
-    debugPrint('_AudioPlayerHandler: Initialization complete');
   }
 
   @override
@@ -589,17 +695,9 @@ class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   BehaviorSubject<PlaybackState> get playbackState => _playbackStateSubject;
 
-  void _updatePosition(Duration position) {
-    final current = _playbackStateSubject.value;
-    _playbackStateSubject.add(current.copyWith(
-      updatePosition: position,
-    ));
-  }
-
   void updatePlaybackStateForNotification({bool? playing}) {
     final current = _playbackStateSubject.value;
     final isPlaying = playing ?? current.playing;
-
     _playbackStateSubject.add(current.copyWith(
       controls: [
         MediaControl.skipToPrevious,
@@ -620,10 +718,8 @@ class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() => _service.play();
-
   @override
   Future<void> pause() => _service.pause();
-
   @override
   Future<void> stop() async {
     await _player.pause();
@@ -631,22 +727,20 @@ class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void dispose() {
-    _positionSubscription?.cancel();
-    _playingSubscription?.cancel();
+    _positionSub?.cancel();
+    _playingSub?.cancel();
   }
 
   @override
   Future<void> seek(Duration position) => _service.seek(position);
-
   @override
   Future<void> skipToNext() => _service.playNext();
-
   @override
   Future<void> skipToPrevious() => _service.playPrevious();
-
   @override
-  Future<void> fastForward() => _service.seek(_player.position + const Duration(seconds: 10));
-
+  Future<void> fastForward() =>
+      _service.seek(_player.position + const Duration(seconds: 10));
   @override
-  Future<void> rewind() => _service.seek(_player.position - const Duration(seconds: 10));
+  Future<void> rewind() =>
+      _service.seek(_player.position - const Duration(seconds: 10));
 }

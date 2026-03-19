@@ -38,6 +38,22 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Song? get _currentSong => _audioService.currentSong;
 
+  Widget _desktopFadeSlide(Widget child, Animation<double> animation) {
+    final fade = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    final slide = Tween<Offset>(
+      begin: const Offset(0.04, 0.0),
+      end: Offset.zero,
+    ).animate(fade);
+    return FadeTransition(
+      opacity: fade,
+      child: SlideTransition(position: slide, child: child),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -101,6 +117,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
         final isLiked = likeService.isLiked(song);
         final bottomInset = MediaQuery.of(context).padding.bottom + 24;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isWide = screenWidth > 800;
 
         return Scaffold(
           backgroundColor: Colors.black,
@@ -132,95 +150,204 @@ class _PlayerScreenState extends State<PlayerScreen>
 
                 SafeArea(
                   bottom: false,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset),
-                    child: Column(
-                      children: [
-                        PlayerTopBar(
-                          liked: isLiked,
-                          onLikeToggle: () =>
-                              context.read<LikeService>().toggleLike(song),
-                          onCollapse: widget.onCollapse,
-                        ),
-
-                        const Spacer(),
-
-                        Expanded(
-                          flex: 5,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 400),
-                            child: _viewMode == PlayerViewMode.lyrics
-                                ? LyricsView(
-                                    artist: song.artist,
-                                    track: song.title,
-                                    positionStream: _audioService.positionStream,
-                                  )
-                                : _viewMode == PlayerViewMode.artist
-                                    ? ArtistView(
-                                        key: const ValueKey('artist_view'),
-                                        song: song,
-                                        onPlaySong: (s) {
-                                          _audioService.playSong(s);
-                                        },
-                                      )
-                                    : AlbumArt(
-                                        key: ValueKey(song.id),
-                                        coverUrl: song.coverUrl,
-                                        rotation: _discAnim,
-                                      ),
-                          ),
-                        ),
-
-                        const Spacer(),
-
-                        SongInfo(song: song),
-                        const SizedBox(height: 16),
-
-                        ViewToggle(
-                          viewMode: _viewMode,
-                          onToggle: (v) => setState(() => _viewMode = v),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        ProgressBar(
-                          positionStream: _audioService.positionStream,
-                          durationStream: _audioService.durationStream,
-                          accentColor: Colors.white,
-                          onSeek: _audioService.seek,
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        StreamBuilder<bool>(
-                          stream: _audioService.playingStream,
-                          initialData: _audioService.isPlaying,
-                          builder: (context, snapshot) {
-                            return PlayerControls(
-                              isPlaying: snapshot.data ?? false,
-                              onPlayPause: _audioService.togglePlayPause,
-                              onNext: _audioService.playNext,
-                              onPrevious: _audioService.playPrevious,
-                              accentColor: Colors.white,
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 30),
-
-                        PlayerActions(
-                          accentColor: Colors.white,
-                          currentSong: song,
-                        ),
-                      ],
-                    ),
-                  ),
+                  child: isWide
+                      ? _buildDesktopPlayerLayout(song, isLiked, bottomInset)
+                      : _buildMobilePlayerLayout(song, isLiked, bottomInset),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// Desktop player layout: horizontal with album art on left, controls on right
+  Widget _buildDesktopPlayerLayout(Song song, bool isLiked, double bottomInset) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(48, 24, 48, bottomInset),
+      child: Row(
+        children: [
+          // Left side: Album Art
+          Expanded(
+            flex: 5,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520, maxHeight: 520),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 520),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: _desktopFadeSlide,
+                  child: _viewMode == PlayerViewMode.lyrics
+                      ? LyricsView(
+                          key: ValueKey('lyrics_${song.id}'),
+                          artist: song.artist,
+                          track: song.title,
+                          positionStream: _audioService.positionStream,
+                          isDesktop: true,
+                        )
+                      : _viewMode == PlayerViewMode.artist
+                          ? ArtistView(
+                              key: ValueKey('artist_${song.id}'),
+                              song: song,
+                              onPlaySong: (s) => _audioService.playSong(s),
+                            )
+                          : AlbumArt(
+                              key: ValueKey('album_${song.id}'),
+                              coverUrl: song.coverUrl,
+                              rotation: _discAnim,
+                            ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 48),
+          // Right side: Song info + controls
+          Expanded(
+            flex: 4,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 460),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: _desktopFadeSlide,
+              child: Column(
+                key: ValueKey('desktop_meta_${song.id}'),
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  PlayerTopBar(
+                    liked: isLiked,
+                    onLikeToggle: () =>
+                        context.read<LikeService>().toggleLike(song),
+                    onCollapse: widget.onCollapse,
+                  ),
+                  const Spacer(),
+                  SongInfo(song: song),
+                  const SizedBox(height: 20),
+                  ViewToggle(
+                    viewMode: _viewMode,
+                    onToggle: (v) => setState(() => _viewMode = v),
+                  ),
+                  const SizedBox(height: 28),
+                  ProgressBar(
+                    positionStream: _audioService.positionStream,
+                    durationStream: _audioService.durationStream,
+                    accentColor: Colors.white,
+                    onSeek: _audioService.seek,
+                  ),
+                  const SizedBox(height: 24),
+                  StreamBuilder<bool>(
+                    stream: _audioService.playingStream,
+                    initialData: _audioService.isPlaying,
+                    builder: (context, snapshot) {
+                      return PlayerControls(
+                        isPlaying: snapshot.data ?? false,
+                        onPlayPause: _audioService.togglePlayPause,
+                        onNext: _audioService.playNext,
+                        onPrevious: _audioService.playPrevious,
+                        accentColor: Colors.white,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 30),
+                  PlayerActions(
+                    accentColor: Colors.white,
+                    currentSong: song,
+                  ),
+                  const Spacer(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Mobile player layout: vertical column
+  Widget _buildMobilePlayerLayout(Song song, bool isLiked, double bottomInset) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset),
+      child: Column(
+        children: [
+          PlayerTopBar(
+            liked: isLiked,
+            onLikeToggle: () =>
+                context.read<LikeService>().toggleLike(song),
+            onCollapse: widget.onCollapse,
+          ),
+
+          const Spacer(),
+
+          Expanded(
+            flex: 5,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: _viewMode == PlayerViewMode.lyrics
+                  ? LyricsView(
+                      artist: song.artist,
+                      track: song.title,
+                      positionStream: _audioService.positionStream,
+                    )
+                  : _viewMode == PlayerViewMode.artist
+                      ? ArtistView(
+                          key: const ValueKey('artist_view'),
+                          song: song,
+                          onPlaySong: (s) {
+                            _audioService.playSong(s);
+                          },
+                        )
+                      : AlbumArt(
+                          key: ValueKey(song.id),
+                          coverUrl: song.coverUrl,
+                          rotation: _discAnim,
+                        ),
+            ),
+          ),
+
+          const Spacer(),
+
+          SongInfo(song: song),
+          const SizedBox(height: 16),
+
+          ViewToggle(
+            viewMode: _viewMode,
+            onToggle: (v) => setState(() => _viewMode = v),
+          ),
+
+          const SizedBox(height: 24),
+
+          ProgressBar(
+            positionStream: _audioService.positionStream,
+            durationStream: _audioService.durationStream,
+            accentColor: Colors.white,
+            onSeek: _audioService.seek,
+          ),
+
+          const SizedBox(height: 20),
+
+          StreamBuilder<bool>(
+            stream: _audioService.playingStream,
+            initialData: _audioService.isPlaying,
+            builder: (context, snapshot) {
+              return PlayerControls(
+                isPlaying: snapshot.data ?? false,
+                onPlayPause: _audioService.togglePlayPause,
+                onNext: _audioService.playNext,
+                onPrevious: _audioService.playPrevious,
+                accentColor: Colors.white,
+              );
+            },
+          ),
+
+          const SizedBox(height: 30),
+
+          PlayerActions(
+            accentColor: Colors.white,
+            currentSong: song,
+          ),
+        ],
+      ),
     );
   }
 }

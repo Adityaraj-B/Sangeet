@@ -1,15 +1,21 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/song.dart';
-import '../models/artist.dart'; // Make sure this import exists
+import '../models/artist.dart';
 import '../models/album.dart';
 
 class SearchRepository {
   static const String baseUrl = 'https://vercelapi-gamma.vercel.app/api';
 
-  // --- SONG SEARCH ---
+  // --- SONG SEARCH (JioSaavn) ---
 
   Future<List<Song>> search(String query, {int limit = 20}) async {
+    if (query.trim().isEmpty) return [];
+    return searchSaavn(query, limit: limit);
+  }
+
+  /// Saavn-only search (used for sub-word queries and fallback).
+  Future<List<Song>> searchSaavn(String query, {int limit = 20}) async {
     if (query.trim().isEmpty) return [];
 
     try {

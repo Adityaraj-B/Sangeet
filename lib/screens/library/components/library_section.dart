@@ -35,12 +35,16 @@ class _RecentlyPlayedSectionState extends State<RecentlyPlayedSection> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth > 800;
+    final horizontalPad = isWide ? 28.0 : 16.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPad),
           child: SectionHeader(
             title: 'Recently Played',
             onSeeAll: widget.onSeeAll,
@@ -50,7 +54,7 @@ class _RecentlyPlayedSectionState extends State<RecentlyPlayedSection> {
 
         // Reactive List
         SizedBox(
-          height: 200,
+          height: isWide ? 220 : 200,
           child: ValueListenableBuilder<List<Song>>(
             valueListenable: RecentlyPlayedService.recentSongsNotifier,
             builder: (context, songs, child) {
@@ -86,7 +90,7 @@ class _RecentlyPlayedSectionState extends State<RecentlyPlayedSection> {
               final displaySongs = songs.take(10).toList();
 
               return ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.symmetric(horizontal: horizontalPad),
                 scrollDirection: Axis.horizontal,
                 itemCount: displaySongs.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 16),

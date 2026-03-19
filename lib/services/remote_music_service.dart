@@ -113,11 +113,11 @@ class RemoteMusicService implements MusicApiService {
     }
   }
 
-  Future<List<Album>> searchAlbums(String query) async {
+  Future<List<Album>> searchAlbums(String query, {int limit = 50}) async {
     try {
       final encodedQuery = Uri.encodeComponent(query);
       final res = await http.get(
-        Uri.parse('$baseUrl/search/albums?query=$encodedQuery&limit=50'),
+        Uri.parse('$baseUrl/search/albums?query=$encodedQuery&limit=$limit'),
       );
 
       if (res.statusCode == 200) {
@@ -188,11 +188,11 @@ class RemoteMusicService implements MusicApiService {
   }
 
   @override
-  Future<List<Song>> searchSongs(String query) async {
+  Future<List<Song>> searchSongs(String query, {int limit = 20}) async {
     try {
       final encodedQuery = Uri.encodeComponent(query);
       final res = await http.get(
-        Uri.parse('$baseUrl/search/songs?query=$encodedQuery&limit=20'),
+        Uri.parse('$baseUrl/search/songs?query=$encodedQuery&limit=$limit'),
       );
 
       if (res.statusCode == 200) {

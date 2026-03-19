@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -33,10 +30,8 @@ class DefaultFirebaseOptions {
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        // Use web configuration for Windows desktop (Firebase Dart SDK)
+        return web;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -65,4 +60,15 @@ class DefaultFirebaseOptions {
     storageBucket: 'sangeet-91947.firebasestorage.app',
     iosBundleId: 'com.example.sangeet',
   );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'REMOVED',
+    appId: '1:857660537994:web:30c656314a0fb7881ec173',
+    messagingSenderId: '857660537994',
+    projectId: 'sangeet-91947',
+    authDomain: 'sangeet-91947.firebaseapp.com',
+    storageBucket: 'sangeet-91947.firebasestorage.app',
+    measurementId: 'G-Z60GGL71PZ',
+  );
+
 }

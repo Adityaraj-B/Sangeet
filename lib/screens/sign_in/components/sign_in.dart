@@ -354,7 +354,9 @@ class _SignInScreenState extends State<SignInScreen> with TickerProviderStateMix
                 vertical: verticalPad,
               ),
               child: Center(
-                child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: FadeTransition(
                     opacity: _fadeAnimation,
@@ -414,6 +416,7 @@ class _SignInScreenState extends State<SignInScreen> with TickerProviderStateMix
                     ),
                   ),
                 ),
+              ),
               ),
             ),
           ),
