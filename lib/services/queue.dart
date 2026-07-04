@@ -25,6 +25,10 @@ class QueueService extends ChangeNotifier {
   static const int _maxHistorySize = 50;
   bool _isLoadingSimilar = false;
 
+  // Completer that resolves when the current _loadSimilarSongs call finishes.
+  // Callers that need to wait (loadMoreSimilar) await this instead of polling.
+  Completer<void>? _loadingSimilarCompleter;
+
   /// Timestamp when the current song started playing — used for skip detection.
   DateTime? _lastPlayStartTime;
 
@@ -46,9 +50,8 @@ class QueueService extends ChangeNotifier {
     notifyListeners();
 
     // Count how many manual (playlist) songs are in the queue
-    final manualSongsInQueue = _upNext
-        .where((s) => _manualQueueIds.contains(s.id))
-        .length;
+    final manualSongsInQueue =
+        _upNext.where((s) => _manualQueueIds.contains(s.id)).length;
 
     // If the user picked a different song (often from another genre/artist),
     // refresh "similar" suggestions so Up Next matches the new context.
@@ -79,9 +82,8 @@ class QueueService extends ChangeNotifier {
 
     if (resetAutoQueue) {
       // Keep only manual items; drop old suggestions that were based on a different song.
-      final preserved = _upNext
-          .where((s) => _manualQueueIds.contains(s.id))
-          .toList();
+      final preserved =
+      _upNext.where((s) => _manualQueueIds.contains(s.id)).toList();
       _upNext
         ..clear()
         ..addAll(preserved);
@@ -94,12 +96,17 @@ class QueueService extends ChangeNotifier {
     await _loadSimilarSongs(song);
   }
 
+  /// Waits for any in-progress load to finish, then triggers a fresh load.
+  /// Replaces the old busy-loop polling with a proper Completer await.
   Future<void> loadMoreSimilar(Song song) async {
-    // Don't skip if already loading - instead wait for it to complete
-    while (_isLoadingSimilar) {
-      await Future.delayed(const Duration(milliseconds: 100));
+    if (_isLoadingSimilar && _loadingSimilarCompleter != null) {
+      // Wait for the current load to complete rather than spinning.
+      await _loadingSimilarCompleter!.future.catchError((_) {});
     }
-    await _loadSimilarSongs(song);
+    // Only load if the queue is still empty after waiting.
+    if (_upNext.isEmpty) {
+      await _loadSimilarSongs(song);
+    }
   }
 
   Future<Song?> playNext() async {
@@ -108,13 +115,10 @@ class QueueService extends ChangeNotifier {
     );
 
     if (!hasNext) {
-      // If suggestions are still loading, wait briefly so auto-advance can continue.
-      if (_isLoadingSimilar) {
-        var waited = 0;
-        while (_isLoadingSimilar && waited < 2000) {
-          await Future.delayed(const Duration(milliseconds: 100));
-          waited += 100;
-        }
+      // If suggestions are still loading, wait for them to finish.
+      if (_isLoadingSimilar && _loadingSimilarCompleter != null) {
+        debugPrint('QueueService.playNext: waiting for similar songs…');
+        await _loadingSimilarCompleter!.future.catchError((_) {});
       }
       if (!hasNext) {
         debugPrint('QueueService.playNext: Queue is empty, returning null');
@@ -178,9 +182,8 @@ class QueueService extends ChangeNotifier {
     );
 
     // Count how many manual (playlist) songs remain in queue
-    final manualSongsRemaining = _upNext
-        .where((s) => _manualQueueIds.contains(s.id))
-        .length;
+    final manualSongsRemaining =
+        _upNext.where((s) => _manualQueueIds.contains(s.id)).length;
     debugPrint(
       'QueueService.playNext: Manual songs remaining in queue: $manualSongsRemaining',
     );
@@ -188,13 +191,12 @@ class QueueService extends ChangeNotifier {
     // Only load similar songs if:
     // 1. Queue is getting low (< 3 songs), AND
     // 2. There are no manual (playlist) songs remaining
-    // This ensures we finish playing all playlist songs before adding similar songs
     // NOTE: Don't await — load in background so playback isn't blocked.
     if (_upNext.length < 3 &&
         manualSongsRemaining == 0 &&
         _currentSong != null) {
       debugPrint(
-        'QueueService.playNext: Queue low (${_upNext.length}) and no manual songs, loading similar songs in background...',
+        'QueueService.playNext: Queue low (${_upNext.length}) and no manual songs, loading similar songs in background…',
       );
       unawaited(_loadSimilarSongs(_currentSong!));
     }
@@ -209,7 +211,6 @@ class QueueService extends ChangeNotifier {
 
     if (_currentSong != null) {
       _upNext.addFirst(_currentSong!);
-      // This is part of navigation history, not a manual queue action.
       _manualQueueIds.remove(_currentSong!.id);
     }
 
@@ -251,7 +252,6 @@ class QueueService extends ChangeNotifier {
   }
 
   /// Set the last played song without starting playback.
-  /// Used to show the last song in mini player when app opens.
   void setLastPlayedSong(Song song) {
     if (_currentSong == null) {
       _currentSong = song;
@@ -273,6 +273,7 @@ class QueueService extends ChangeNotifier {
       'QueueService._loadSimilarSongs: Loading blended queue for "${song.title}" (${song.id})',
     );
     _isLoadingSimilar = true;
+    _loadingSimilarCompleter = Completer<void>();
     notifyListeners();
 
     try {
@@ -282,17 +283,11 @@ class QueueService extends ChangeNotifier {
       futures.add(_musicService.getSongSuggestions(song.id));
 
       // 2. Taste-based exploration: search for 1-2 top-affinity artists
-      //    so the queue blends discovery with familiarity
       final topArtists = _tasteService.topArtists(3);
-      // Pick artists that are different from the current song's artist
-      final currentArtist = song.artist
-          .split(RegExp(r'[,&]'))
-          .first
-          .trim()
-          .toLowerCase();
-      final explorationArtists = topArtists
-          .where((a) => a != currentArtist)
-          .take(2);
+      final currentArtist =
+      song.artist.split(RegExp(r'[,&]')).first.trim().toLowerCase();
+      final explorationArtists =
+      topArtists.where((a) => a != currentArtist).take(2);
       for (final artist in explorationArtists) {
         futures.add(_musicService.searchSongs(artist));
       }
@@ -302,7 +297,7 @@ class QueueService extends ChangeNotifier {
         'QueueService._loadSimilarSongs: Got ${results.map((r) => r.length).join(", ")} results from ${results.length} sources',
       );
 
-      // Merge all results
+      // Merge all results, dedup by id
       final allCandidates = <Song>[];
       final seenIds = <String>{};
       for (final batch in results) {
@@ -326,7 +321,7 @@ class QueueService extends ChangeNotifier {
             !_tasteService.wasSkipped(s.id);
       }).toList();
 
-      // Re-rank by taste affinity (if profile exists) blended with position
+      // Re-rank by taste affinity
       if (_tasteService.hasProfile && filtered.isNotEmpty) {
         filtered.sort((a, b) {
           final aScore = _tasteService.affinityScore(a);
@@ -339,11 +334,8 @@ class QueueService extends ChangeNotifier {
       final artistCount = <String, int>{};
       final diverse = <Song>[];
       for (final s in filtered) {
-        final artist = s.artist
-            .split(RegExp(r'[,&]'))
-            .first
-            .trim()
-            .toLowerCase();
+        final artist =
+        s.artist.split(RegExp(r'[,&]')).first.trim().toLowerCase();
         final count = artistCount[artist] ?? 0;
         if (count < 2) {
           diverse.add(s);
@@ -358,10 +350,14 @@ class QueueService extends ChangeNotifier {
       debugPrint(
         'QueueService._loadSimilarSongs: Queue now has ${_upNext.length} songs',
       );
+
+      _loadingSimilarCompleter!.complete();
     } catch (e) {
       debugPrint('QueueService._loadSimilarSongs: Error: $e');
+      _loadingSimilarCompleter!.completeError(e);
     } finally {
       _isLoadingSimilar = false;
+      _loadingSimilarCompleter = null;
       notifyListeners();
     }
   }
@@ -420,36 +416,27 @@ class QueueService extends ChangeNotifier {
 
     final list = _upNext.toList();
 
-    // Add current song to history if it exists
     if (_currentSong != null) {
       _addToHistory(_currentSong!);
     }
 
-    // Get the song at the specified index
     final targetSong = list[index];
-
-    // Remove all songs before and including the target index
     final songsToHistory = list.sublist(0, index);
 
-    // Add skipped songs to history (in order)
     for (final song in songsToHistory) {
       _addToHistory(song);
       _manualQueueIds.remove(song.id);
     }
 
-    // Remove the target song from manual queue tracking
     _manualQueueIds.remove(targetSong.id);
 
-    // Update the queue to only have songs after the target
     final remainingQueue = list.sublist(index + 1);
     _upNext
       ..clear()
       ..addAll(remainingQueue);
 
-    // Set the target song as current
     _currentSong = targetSong;
 
-    // Load more similar songs if queue is getting low
     if (_upNext.length < 3 && _currentSong != null) {
       await _loadSimilarSongs(_currentSong!);
     }
@@ -460,15 +447,12 @@ class QueueService extends ChangeNotifier {
 
   /// Play a song from history
   Future<Song?> playFromHistory(Song song) async {
-    // Add current song to history if it exists
     if (_currentSong != null) {
       _addToHistory(_currentSong!);
     }
 
-    // Set the selected song as current
     _currentSong = song;
 
-    // Ensure we have songs in the queue
     if (_upNext.isEmpty) {
       await _loadSimilarSongs(song);
     }
@@ -483,6 +467,7 @@ class QueueService extends ChangeNotifier {
     _history.clear();
     _manualQueueIds.clear();
     _isLoadingSimilar = false;
+    _loadingSimilarCompleter = null;
     notifyListeners();
   }
 }

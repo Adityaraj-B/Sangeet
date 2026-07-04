@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart' as audio_session;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sangeet/services/queue.dart';
 import 'package:sangeet/services/recently_played.dart';
@@ -50,8 +52,14 @@ class AudioPlayerService {
 
   bool _wasPlayingBeforeInterruption = false;
 
-  // Desktop: transition guard
-  bool _desktopTransitionInProgress = false;
+  // ── Transition guard ─────────────────────────────────────────────────────
+  // Set synchronously at the start of every _mobilePlaySong / _desktopPlaySong
+  // call, cleared just before play(). The completion listener drops any
+  // `completed` event while this is true — covers stop()-induced completions
+  // from ExoPlayer and any other spurious events during track switching.
+  bool _isTransitioning = false;
+
+  // Desktop: serialise concurrent transition requests
   Completer<void>? _transitionCompleter;
 
   // Desktop player fields
@@ -113,14 +121,17 @@ class AudioPlayerService {
       if (PlatformUtils.isMobile) {
         _audioHandler = await AudioService.init(
           builder: () => _AudioPlayerHandler(_audioPlayer, this),
-          config: const AudioServiceConfig(
+          config: AudioServiceConfig(
             androidNotificationChannelId: 'com.example.sangeet.audio',
             androidNotificationChannelName: 'Sangeet Music',
             androidNotificationChannelDescription: 'Music playback controls',
             androidNotificationIcon: 'drawable/ic_notification',
             androidShowNotificationBadge: true,
-            androidNotificationOngoing: false,
-            androidStopForegroundOnPause: true,
+            // ongoing=true keeps the notification alive so OEM launchers
+            // (Samsung Now Bar, Vivo Origin Island, etc.) can latch onto it
+            androidNotificationOngoing: true,
+            androidStopForegroundOnPause: false,
+            androidNotificationClickStartsActivity: true,
             artDownscaleWidth: 300,
             artDownscaleHeight: 300,
             notificationColor: Color(0xFFE6D690),
@@ -130,6 +141,11 @@ class AudioPlayerService {
           ),
         );
         _audioHandlerInitialized = true;
+
+        // Request battery optimisation exemption so OEM task-killers
+        // (Vivo, Xiaomi, Oppo, Realme) don't kill the foreground service
+        // before the island UI can latch onto the MediaSession.
+        await _requestBatteryOptimizationExemption();
       } else {
         debugPrint('AudioPlayerService: Desktop — skipping AudioService.init');
         _audioHandlerInitialized = false;
@@ -152,6 +168,20 @@ class AudioPlayerService {
       _initializationCompleter!.completeError(e);
       _initializationCompleter = null;
       rethrow;
+    }
+  }
+
+  // ── Battery optimisation exemption (Chinese OEMs + Samsung) ─────────────
+
+  Future<void> _requestBatteryOptimizationExemption() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final status = await Permission.ignoreBatteryOptimizations.status;
+      if (!status.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    } catch (e) {
+      debugPrint('AudioPlayerService: battery exemption request failed: $e');
     }
   }
 
@@ -180,8 +210,12 @@ class AudioPlayerService {
     _playerStateFwd?.cancel();
     _playingFwd?.cancel();
 
-    try { await oldPlayer.stop(); } catch (_) {}
-    try { await oldPlayer.dispose(); } catch (_) {}
+    try {
+      await oldPlayer.stop();
+    } catch (_) {}
+    try {
+      await oldPlayer.dispose();
+    } catch (_) {}
 
     _audioPlayer = AudioPlayer();
     try {
@@ -194,19 +228,21 @@ class AudioPlayerService {
   }
 
   // ── Completion listener ──────────────────────────────────────────────────
-  //
-  // On mobile: cancelled before stop() and re-subscribed after setUrl().
-  // After setUrl() the player is in `loading` state (not `completed`), so
-  // the BehaviorSubject does NOT replay a stale `completed` event to the
-  // new subscriber. The new subscriber only sees genuine end-of-song events.
-  //
-  // On desktop: uses _desktopTransitionInProgress flag as before.
+  // Single persistent listener for the lifetime of the service.
+  // Drops any `completed` event while _isTransitioning is true — covers
+  // stop()-induced completions on ExoPlayer and spurious events during
+  // track switching on both mobile and desktop.
 
   void _setupCompletionListener() {
     _completionSub?.cancel();
     _completionSub = _audioPlayer.playerStateStream.listen((state) async {
       if (state.processingState != ProcessingState.completed) return;
-      if (!PlatformUtils.isMobile && _desktopTransitionInProgress) return;
+
+      if (_isTransitioning) {
+        debugPrint(
+            'AudioPlayerService: completion ignored — transition in progress');
+        return;
+      }
 
       debugPrint('AudioPlayerService: song ended naturally, advancing…');
       await _advanceToNextSong();
@@ -216,15 +252,11 @@ class AudioPlayerService {
   // ── Advance to next song ─────────────────────────────────────────────────
 
   Future<void> _advanceToNextSong() async {
-    // Cancel the completion listener immediately so re-entrancy is impossible.
-    // It will be re-attached inside _mobilePlaySong after setUrl().
-    if (PlatformUtils.isMobile) {
-      _completionSub?.cancel();
-      _completionSub = null;
-    }
+    // Guard against re-entrant calls (two `completed` events back-to-back)
+    if (_isTransitioning) return;
 
     if (!_queueService.hasNext && _queueService.isLoadingSimilar) {
-      debugPrint('AudioPlayerService: queue empty but loading, waiting…');
+      debugPrint('AudioPlayerService: queue empty, waiting for similar…');
       const pollInterval = Duration(milliseconds: 200);
       const maxWait = Duration(seconds: 8);
       var waited = Duration.zero;
@@ -246,8 +278,6 @@ class AudioPlayerService {
 
     if (nextSong == null) {
       debugPrint('AudioPlayerService: queue empty, stopping');
-      // Re-attach listener so future plays work (e.g. user adds songs manually)
-      if (PlatformUtils.isMobile) _setupCompletionListener();
       return;
     }
 
@@ -265,40 +295,42 @@ class AudioPlayerService {
   Future<bool> _mobilePlaySong(Song song) async {
     final src = song.streamUrl;
     if (src == null || src.isEmpty) {
-      debugPrint(
-          'AudioPlayerService: [mobile] no stream URL for ${song.title}');
-      if (_completionSub == null) _setupCompletionListener();
+      debugPrint('AudioPlayerService: [mobile] no URL for ${song.title}');
       return false;
     }
 
-    try { await _recentService.addSong(song); } catch (_) {}
-    TasteProfileService().rebuildProfile(recentService: _recentService);
-
-    // Cancel listener before stop() so the stop()-induced `completed` event
-    // is never delivered. The listener doesn't exist during the transition.
-    _completionSub?.cancel();
-    _completionSub = null;
+    // Set flag SYNCHRONOUSLY before any await so the completion listener
+    // immediately starts dropping spurious events from stop().
+    _isTransitioning = true;
+    debugPrint('AudioPlayerService: [mobile] loading ${song.title}');
 
     try {
-      await _audioPlayer.stop();
+      await _recentService.addSong(song);
+    } catch (_) {}
+    TasteProfileService().rebuildProfile(recentService: _recentService);
 
-      // After stop(), player is in `idle` state.
+    try {
+      // stop() emits `completed` on ExoPlayer — listener drops it because
+      // _isTransitioning is true.
+      await _audioPlayer.stop();
       await _audioPlayer.setUrl(src);
 
-      // After setUrl(), player is in `loading` state — NOT `completed`.
-      // It is now safe to re-subscribe: the BehaviorSubject will replay
-      // `loading`, not `completed`, so no phantom advance fires.
-      _setupCompletionListener();
-
+      // Update notification metadata before play() so the OEM island
+      // shows the correct track info as soon as playback starts.
       if (_audioHandlerInitialized) _updateMediaItem(song);
+
+      // Clear flag just before play() so a legitimate `completed` on this
+      // track (e.g. very short / error) is not silently swallowed.
+      _isTransitioning = false;
+
       await _audioPlayer.play();
 
       debugPrint('AudioPlayerService: [mobile] playing ${song.title}');
       return true;
     } catch (e) {
-      // Always ensure listener is attached even on error.
-      if (_completionSub == null) _setupCompletionListener();
-      debugPrint('AudioPlayerService: [mobile] error: $e');
+      debugPrint(
+          'AudioPlayerService: [mobile] error playing ${song.title}: $e');
+      _isTransitioning = false;
       return false;
     }
   }
@@ -309,7 +341,7 @@ class AudioPlayerService {
     final audioSource = await _getDesktopSource(song);
     if (audioSource == null) return false;
 
-    _desktopTransitionInProgress = true;
+    _isTransitioning = true;
     try {
       if (PlatformUtils.isWindows) {
         await _recreateWindowsPlayer();
@@ -318,14 +350,16 @@ class AudioPlayerService {
         await _swapTrack(audioSource);
       }
       if (_audioHandlerInitialized) _updateMediaItem(song);
+
+      _isTransitioning = false;
       await _audioPlayer.play();
+
       debugPrint('AudioPlayerService: [desktop] playing ${song.title}');
       return true;
     } catch (e) {
       debugPrint('AudioPlayerService: [desktop] error: $e');
+      _isTransitioning = false;
       return false;
-    } finally {
-      _desktopTransitionInProgress = false;
     }
   }
 
@@ -365,25 +399,6 @@ class AudioPlayerService {
       );
       final handler = _audioHandler as _AudioPlayerHandler;
       handler.mediaItem.add(mediaItem);
-      final currentState = handler.playbackState.value;
-      handler.playbackState.add(currentState.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          _audioPlayer.playing ? MediaControl.pause : MediaControl.play,
-          MediaControl.skipToNext,
-        ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-        },
-        androidCompactActionIndices: const [0, 1, 2],
-        processingState: AudioProcessingState.ready,
-        playing: _audioPlayer.playing,
-        updatePosition: _audioPlayer.position,
-        bufferedPosition: Duration.zero,
-        speed: 1.0,
-      ));
     } catch (e) {
       debugPrint('AudioPlayerService: _updateMediaItem error: $e');
     }
@@ -395,7 +410,9 @@ class AudioPlayerService {
     debugPrint('AudioPlayerService: playSong: ${song.title}');
 
     if (!_audioInitialized) {
-      try { await initialize(); } catch (e) {
+      try {
+        await initialize();
+      } catch (e) {
         debugPrint('AudioPlayerService: init failed: $e');
       }
     }
@@ -434,7 +451,7 @@ class AudioPlayerService {
     if (_audioPlayer.processingState == ProcessingState.idle ||
         _audioPlayer.processingState == ProcessingState.completed) {
       if (PlatformUtils.isMobile) {
-        await _audioPlayer.play();
+        await _mobilePlaySong(song);
       } else {
         await _withTransitionLock(() => _desktopPlaySong(song));
       }
@@ -453,7 +470,7 @@ class AudioPlayerService {
     if (_audioPlayer.processingState == ProcessingState.idle ||
         _audioPlayer.processingState == ProcessingState.completed) {
       if (PlatformUtils.isMobile) {
-        await _audioPlayer.play();
+        await _mobilePlaySong(song);
       } else {
         await _withTransitionLock(() => _desktopPlaySong(song));
       }
@@ -473,13 +490,11 @@ class AudioPlayerService {
     }
     if (_audioHandlerInitialized && _audioHandler != null) {
       final handler = _audioHandler as _AudioPlayerHandler;
-      handler.playbackState.add(PlaybackState(
+      handler.playbackState.add(handler.playbackState.value.copyWith(
         controls: [],
-        systemActions: const {},
         processingState: AudioProcessingState.idle,
         playing: false,
       ));
-      handler.mediaItem.add(null);
     }
   }
 
@@ -627,10 +642,14 @@ class AudioPlayerService {
     _playingFwd?.cancel();
 
     if (_audioHandlerInitialized && _audioHandler != null) {
-      try { await _audioHandler!.stop(); } catch (_) {}
+      try {
+        await _audioHandler!.stop();
+      } catch (_) {}
     }
 
-    try { await _audioPlayer.dispose(); } catch (_) {}
+    try {
+      await _audioPlayer.dispose();
+    } catch (_) {}
 
     _audioHandlerInitialized = false;
     _audioInitialized = false;
@@ -648,71 +667,61 @@ class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player;
   final AudioPlayerService _service;
 
-  final BehaviorSubject<MediaItem?> _mediaItemSubject =
-  BehaviorSubject<MediaItem?>();
-  final BehaviorSubject<PlaybackState> _playbackStateSubject =
-  BehaviorSubject<PlaybackState>.seeded(
-    PlaybackState(
-      controls: [
-        MediaControl.skipToPrevious,
-        MediaControl.play,
-        MediaControl.skipToNext,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
-      androidCompactActionIndices: const [0, 1, 2],
-      processingState: AudioProcessingState.idle,
-      playing: false,
-    ),
-  );
-
-  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<PlaybackEvent>? _eventSub;
   StreamSubscription<bool>? _playingSub;
-  DateTime _lastPositionUpdate = DateTime.now();
-  static const _positionUpdateInterval = Duration(seconds: 1);
+  StreamSubscription<Duration?>? _durationSub;
 
   _AudioPlayerHandler(this._player, this._service) {
-    _positionSub = _player.positionStream.listen((position) {
-      final now = DateTime.now();
-      if (now.difference(_lastPositionUpdate) >= _positionUpdateInterval) {
-        _lastPositionUpdate = now;
-        final current = _playbackStateSubject.value;
-        _playbackStateSubject.add(current.copyWith(updatePosition: position));
-      }
+    // Primary broadcast: fired on every playback event (position, buffer, state)
+    _eventSub = _player.playbackEventStream.listen(_broadcastState);
+
+    // Secondary broadcast: ExoPlayer's playing state lags one frame behind
+    // playbackEventStream. Listening to playingStream separately and forcing
+    // a rebroadcast ensures the notification (and OEM island UI) always shows
+    // the correct play/pause button immediately.
+    _playingSub = _player.playingStream.listen((_) {
+      _broadcastState(_player.playbackEvent);
     });
 
-    _playingSub = _player.playingStream.listen((playing) {
-      updatePlaybackStateForNotification(playing: playing);
+    // Keep MediaItem duration in sync as the stream resolves
+    _durationSub = _player.durationStream.listen((duration) {
+      final current = mediaItem.value;
+      if (current != null && duration != null) {
+        mediaItem.add(current.copyWith(duration: duration));
+      }
     });
   }
 
-  @override
-  BehaviorSubject<MediaItem?> get mediaItem => _mediaItemSubject;
-
-  @override
-  BehaviorSubject<PlaybackState> get playbackState => _playbackStateSubject;
-
-  void updatePlaybackStateForNotification({bool? playing}) {
-    final current = _playbackStateSubject.value;
-    final isPlaying = playing ?? current.playing;
-    _playbackStateSubject.add(current.copyWith(
+  void _broadcastState(PlaybackEvent event) {
+    final playing = _player.playing;
+    playbackState.add(playbackState.value.copyWith(
       controls: [
         MediaControl.skipToPrevious,
-        isPlaying ? MediaControl.pause : MediaControl.play,
+        playing ? MediaControl.pause : MediaControl.play,
         MediaControl.skipToNext,
       ],
       systemActions: const {
         MediaAction.seek,
         MediaAction.seekForward,
         MediaAction.seekBackward,
+        MediaAction.play,
+        MediaAction.pause,
+        MediaAction.skipToNext,
+        MediaAction.skipToPrevious,
+        MediaAction.stop,
       },
       androidCompactActionIndices: const [0, 1, 2],
-      processingState: AudioProcessingState.ready,
-      playing: isPlaying,
-      speed: 1.0,
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
     ));
   }
 
@@ -721,14 +730,12 @@ class _AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> pause() => _service.pause();
   @override
-  Future<void> stop() async {
-    await _player.pause();
-    updatePlaybackStateForNotification(playing: false);
-  }
+  Future<void> stop() => _service.stop();
 
   void dispose() {
-    _positionSub?.cancel();
+    _eventSub?.cancel();
     _playingSub?.cancel();
+    _durationSub?.cancel();
   }
 
   @override
